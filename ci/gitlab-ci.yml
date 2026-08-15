@@ -1,0 +1,21 @@
+# Example GitLab CI job for ArchLens
+archlens:
+  image: python:3.12
+  stage: test
+  script:
+    - pip install .
+    - archlens init
+    - archlens scan --commit "$CI_COMMIT_SHA"
+    - |
+      if [ -n "${CI_MERGE_REQUEST_DIFF_BASE_SHA:-}" ]; then
+        FILES=$(git diff --name-only "$CI_MERGE_REQUEST_DIFF_BASE_SHA"...HEAD || true)
+        if [ -n "$FILES" ]; then
+          archlens impact --files $FILES --output impact_report.md
+        fi
+      fi
+    - archlens report --output docs/ARCHITECTURE.md
+  artifacts:
+    paths:
+      - impact_report.md
+      - docs/ARCHITECTURE.md
+    when: always

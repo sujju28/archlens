@@ -1,0 +1,40 @@
+name: Architecture Check
+on: [pull_request]
+
+jobs:
+  archlens:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ArchLens
+        run: pip install .
+
+      - name: Scan
+        run: |
+          archlens init
+          archlens scan --commit ${{ github.sha }}
+
+      - name: Impact analysis
+        run: |
+          FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD || true)
+          if [ -n "$FILES" ]; then
+            archlens impact --files $FILES --output impact_report.md
+          fi
+
+      - name: Report
+        run: archlens report --output docs/ARCHITECTURE.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: architecture-report
+          path: |
+            impact_report.md
+            docs/ARCHITECTURE.md
+          if-no-files-found: ignore

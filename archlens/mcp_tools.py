@@ -134,29 +134,78 @@ def tool_report(repo_path: str, output_path: str | None = None) -> str:
     )
 
 
+def tool_aggregate(architecture_json_paths: list[str], system_name: str = "Distributed System") -> str:
+    from archlens.distributed.aggregator import aggregate_from_paths
+
+    snap = aggregate_from_paths(architecture_json_paths, system_name=system_name)
+    return json.dumps(
+        {
+            "status": "success",
+            "snapshot_id": snap.snapshot_id,
+            "total_elements": len(snap.elements),
+            "total_relationships": len(snap.relationships),
+            "repos": snap.metadata.get("repos", []),
+            "snapshot": snap.model_dump(mode="json"),
+        },
+        indent=2,
+    )
+
+
+def tool_events(repo_path: str) -> str:
+    from archlens.config import load_config
+    from archlens.distributed.events import EventFlowTracer
+    from archlens.storage.sqlite_store import SQLiteStore, default_db_path
+
+    snap = SQLiteStore(default_db_path(repo_path)).get_latest_snapshot()
+    report = EventFlowTracer(load_config(repo_path)).scan_repo(repo_path, snapshot=snap)
+    return json.dumps(report.to_dict(), indent=2)
+
+
+def tool_contracts(repo_paths: list[str]) -> str:
+    from archlens.distributed.openapi_linker import OpenAPIContractLinker
+
+    report = OpenAPIContractLinker().analyze_repos(repo_paths)
+    return json.dumps(report.to_dict(), indent=2)
+
+
+def tool_health(repo_path: str, trends: bool = True) -> str:
+    from archlens.analysis.health import HealthScorer
+    from archlens.storage.sqlite_store import SQLiteStore, default_db_path
+
+    store = SQLiteStore(default_db_path(repo_path))
+    snap = store.get_latest_snapshot()
+    if not snap:
+        return json.dumps({"error": "No snapshot. Run archlens_scan first."})
+    report = HealthScorer().analyze(snap, store=store if trends else None)
+    return json.dumps(report.to_dict(), indent=2)
+
+
+def tool_federate(url: str) -> str:
+    from archlens.distributed.federation import fetch_remote_architecture
+
+    data = fetch_remote_architecture(url)
+    return json.dumps(
+        {
+            "status": "success",
+            "url": url,
+            "total_elements": len(data.get("elements", [])),
+            "total_relationships": len(data.get("relationships", [])),
+            "architecture": data,
+        },
+        indent=2,
+    )
+
+
 TOOL_SPECS: list[dict[str, Any]] = [
-    {
-        "name": "archlens_scan",
-        "description": "Scan a codebase and create an architecture snapshot.",
-    },
-    {
-        "name": "archlens_query",
-        "description": "Query architecture elements and dependencies (NL or structured).",
-    },
-    {
-        "name": "archlens_impact",
-        "description": "Analyze blast radius of changed files or elements.",
-    },
-    {
-        "name": "archlens_drift",
-        "description": "Detect architectural drift vs the latest snapshot.",
-    },
-    {
-        "name": "archlens_diagram",
-        "description": "Generate Mermaid or Structurizr architecture diagrams.",
-    },
-    {
-        "name": "archlens_report",
-        "description": "Generate ARCHITECTURE.md from the latest snapshot.",
-    },
+    {"name": "archlens_scan", "description": "Scan a codebase and create an architecture snapshot."},
+    {"name": "archlens_query", "description": "Query architecture elements and dependencies (NL or structured)."},
+    {"name": "archlens_impact", "description": "Analyze blast radius of changed files or elements."},
+    {"name": "archlens_drift", "description": "Detect architectural drift vs the latest snapshot."},
+    {"name": "archlens_diagram", "description": "Generate Mermaid or Structurizr architecture diagrams."},
+    {"name": "archlens_report", "description": "Generate ARCHITECTURE.md from the latest snapshot."},
+    {"name": "archlens_aggregate", "description": "Aggregate architecture.json exports from multiple repos."},
+    {"name": "archlens_events", "description": "Detect Kafka/RabbitMQ/SQS event producers and consumers."},
+    {"name": "archlens_contracts", "description": "Link services via OpenAPI specs and HTTP call sites."},
+    {"name": "archlens_health", "description": "Score architecture health (cycles, coupling, layer violations)."},
+    {"name": "archlens_federate", "description": "Fetch architecture JSON from a remote ArchLens/HTTP URL."},
 ]

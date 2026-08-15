@@ -375,6 +375,130 @@ def mcp(transport: str, port: int):
     run_mcp(transport=transport, port=port)
 
 
+@cli.command("aggregate")
+@click.option("--input", "inputs", multiple=True, required=True, help="architecture.json paths (repeatable)")
+@click.option("--name", default="Distributed System", help="System name")
+@click.option("--output", default=None, help="Write aggregated JSON")
+@click.option("--store-repo", default=None, help="Also save into this repo's .archlens DB")
+def aggregate(inputs: tuple[str, ...], name: str, output: str | None, store_repo: str | None):
+    """Aggregate architecture.json exports from multiple repos into one system view."""
+    from archlens.distributed.aggregator import aggregate_from_paths
+
+    snap = aggregate_from_paths(list(inputs), system_name=name)
+    console.print(
+        f"[green]Aggregated[/green] {len(inputs)} repos → "
+        f"{len(snap.elements)} elements, {len(snap.relationships)} relationships"
+    )
+    text = json.dumps(snap.model_dump(mode="json"), indent=2)
+    if output:
+        Path(output).write_text(text, encoding="utf-8")
+        console.print(f"Wrote {output}")
+    else:
+        click.echo(text)
+    if store_repo:
+        store = _store(_repo_path(store_repo))
+        store.save_snapshot(snap)
+        console.print(f"Saved snapshot {snap.snapshot_id} to {store_repo}")
+
+
+@cli.command("events")
+@click.option("--repo", default=None)
+@click.option("--output", default=None, help="Write JSON report")
+def events_cmd(repo: str | None, output: str | None):
+    """Detect Kafka/RabbitMQ/SQS producers and consumers."""
+    from archlens.config import load_config
+    from archlens.distributed.events import EventFlowTracer
+
+    root = _repo_path(repo)
+    snap = _store(root).get_latest_snapshot()
+    report = EventFlowTracer(load_config(root)).scan_repo(root, snapshot=snap)
+    payload = report.to_dict()
+    if output:
+        Path(output).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        console.print(f"Wrote {output}")
+    else:
+        console.print_json(data=payload)
+    console.print(
+        f"Topics: {len(payload['topics'])} | Endpoints: {payload['endpoint_count']} | "
+        f"Event edges: {len(payload['relationships'])}"
+    )
+
+
+@cli.command("contracts")
+@click.option("--repo", default=None, help="Single repo (or use --repos)")
+@click.option("--repos", default=None, help="Comma-separated repo paths for cross-repo linking")
+@click.option("--output", default=None)
+def contracts_cmd(repo: str | None, repos: str | None, output: str | None):
+    """Link services via OpenAPI specs and HTTP call-site matching."""
+    from archlens.distributed.openapi_linker import OpenAPIContractLinker
+
+    paths: list[str]
+    if repos:
+        paths = [p.strip() for p in repos.split(",") if p.strip()]
+    else:
+        paths = [str(_repo_path(repo))]
+    report = OpenAPIContractLinker().analyze_repos(paths)
+    payload = report.to_dict()
+    if output:
+        Path(output).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        console.print(f"Wrote {output}")
+    else:
+        console.print_json(data=payload)
+    console.print(
+        f"Operations: {len(report.operations)} | Call sites: {len(report.call_sites)} | "
+        f"Links: {report.to_dict()['link_count']}"
+    )
+
+
+@cli.command("health")
+@click.option("--repo", default=None)
+@click.option("--output", default=None)
+@click.option("--trends/--no-trends", default=True, help="Include historical scores from DB")
+def health_cmd(repo: str | None, output: str | None, trends: bool):
+    """Score architecture health (coupling, cycles, layer violations)."""
+    from archlens.analysis.health import HealthScorer
+
+    root = _repo_path(repo)
+    store = _store(root)
+    snap = store.get_latest_snapshot()
+    if not snap:
+        console.print("[red]No snapshot. Run archlens scan first.[/red]")
+        sys.exit(1)
+    report = HealthScorer().analyze(snap, store=store if trends else None)
+    payload = report.to_dict()
+    if output:
+        Path(output).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        console.print(f"Wrote {output}")
+    console.print(f"Health score: [bold]{report.score}[/bold] (grade {report.grade})")
+    console.print(
+        f"  cycles={report.metrics.get('cycle_count')} "
+        f"layer_violations={report.metrics.get('layer_violation_count')} "
+        f"density={report.metrics.get('density')}"
+    )
+    if not output:
+        console.print_json(data=payload)
+
+
+@cli.command("federate")
+@click.option("--url", required=True, help="Remote architecture.json or ArchLens HTTP base URL")
+@click.option("--output", default=None, help="Save fetched JSON")
+def federate_cmd(url: str, output: str | None):
+    """Fetch architecture from a remote ArchLens export / HTTP endpoint."""
+    from archlens.distributed.federation import fetch_remote_architecture
+
+    data = fetch_remote_architecture(url)
+    text = json.dumps(data, indent=2)
+    if output:
+        Path(output).write_text(text, encoding="utf-8")
+        console.print(f"Wrote {output}")
+    else:
+        click.echo(text)
+    console.print(
+        f"Remote elements: {len(data.get('elements', []))} | "
+        f"relationships: {len(data.get('relationships', []))}"
+    )
+
+
 def _resolve_snapshot(store: SQLiteStore, ref: str):
     snap = store.get_snapshot(ref)
     if snap:

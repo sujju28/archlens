@@ -76,6 +76,25 @@ archlens agent --repo . --cli
 | `archlens mcp` | Start MCP server for AI assistants / IDEs |
 | `archlens setup-ai` | Generate platform adapter files for all IDEs |
 | `archlens agent` | Interactive architect agent (Antigravity or CLI) |
+| `archlens aggregate` | Merge multi-repo `architecture.json` exports |
+| `archlens events` | Detect Kafka/RabbitMQ/SQS producers & consumers |
+| `archlens contracts` | Link services via OpenAPI + HTTP call sites |
+| `archlens health` | Score coupling, cycles, layer violations |
+| `archlens federate` | Fetch remote architecture JSON / HTTP export |
+
+## Phase 3 (distributed)
+
+```bash
+# Per-repo exports
+archlens scan && archlens export --output billing.json
+# Aggregate
+archlens aggregate --input billing.json --input orders.json --name "Shop" --output system.json
+# Events / contracts / health
+archlens events
+archlens contracts --repos ./billing,./orders
+archlens health
+archlens federate --url https://example.com/architecture.json
+```
 
 ## Configuration
 

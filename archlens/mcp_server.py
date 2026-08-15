@@ -12,8 +12,13 @@ Usage:
 from __future__ import annotations
 
 from archlens.mcp_tools import (
+    tool_aggregate,
+    tool_contracts,
     tool_diagram,
     tool_drift,
+    tool_events,
+    tool_federate,
+    tool_health,
     tool_impact,
     tool_query,
     tool_report,
@@ -85,6 +90,34 @@ def run_mcp(transport: str = "stdio", port: int = 8080) -> None:
     def archlens_report(repo_path: str, output_path: str | None = None) -> str:
         """Generate a full ARCHITECTURE.md report."""
         return tool_report(repo_path, output_path=output_path)
+
+    @mcp.tool(name="archlens_aggregate")
+    def archlens_aggregate(
+        architecture_json_paths: list[str],
+        system_name: str = "Distributed System",
+    ) -> str:
+        """Aggregate architecture.json exports from multiple repositories."""
+        return tool_aggregate(architecture_json_paths, system_name=system_name)
+
+    @mcp.tool(name="archlens_events")
+    def archlens_events(repo_path: str) -> str:
+        """Detect Kafka/RabbitMQ/SQS event producers and consumers."""
+        return tool_events(repo_path)
+
+    @mcp.tool(name="archlens_contracts")
+    def archlens_contracts(repo_paths: list[str]) -> str:
+        """Link services via OpenAPI specs and HTTP call-site matching."""
+        return tool_contracts(repo_paths)
+
+    @mcp.tool(name="archlens_health")
+    def archlens_health(repo_path: str, trends: bool = True) -> str:
+        """Score architecture health (cycles, coupling, layer violations)."""
+        return tool_health(repo_path, trends=trends)
+
+    @mcp.tool(name="archlens_federate")
+    def archlens_federate(url: str) -> str:
+        """Fetch architecture JSON from a remote ArchLens export or HTTP endpoint."""
+        return tool_federate(url)
 
     if transport == "stdio":
         mcp.run(transport="stdio")

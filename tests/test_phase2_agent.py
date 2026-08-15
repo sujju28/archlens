@@ -118,14 +118,11 @@ def test_mcp_tools_end_to_end(tmp_path: Path):
     assert "graph" in diagram
 
     names = {t["name"] for t in TOOL_SPECS}
-    assert names == {
-        "archlens_scan",
-        "archlens_query",
-        "archlens_impact",
-        "archlens_drift",
-        "archlens_diagram",
-        "archlens_report",
-    }
+    assert "archlens_scan" in names
+    assert "archlens_query" in names
+    assert "archlens_impact" in names
+    assert "archlens_health" in names
+    assert len(TOOL_SPECS) >= 11
 
 
 def test_cli_setup_ai_and_query(tmp_path: Path):

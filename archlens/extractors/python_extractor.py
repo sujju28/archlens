@@ -13,8 +13,6 @@ from archlens.extractors.base import (
     PYTHON_ROUTE_METHODS,
     PYTHON_STEREOTYPE_MAP,
     BaseExtractor,
-    stereotype_from_annotations,
-    stereotype_from_path,
 )
 from archlens.models import ArchElement, ArchRelationship, RelType
 
@@ -137,14 +135,14 @@ class PythonExtractor(BaseExtractor):
                 name = source[name_node.start_byte : name_node.end_byte].decode("utf-8")
                 decorators = self._preceding_decorators(node, source)
                 extends = self._superclasses(node, source)
-                stereotype = stereotype_from_annotations(
-                    decorators, "python", PYTHON_STEREOTYPE_MAP, self.config
+                stereotype = self.resolve_element_stereotype(
+                    name=name,
+                    file_path=file_path,
+                    annotations=decorators,
+                    extends=extends[0] if extends else None,
+                    implements=extends[1:] if len(extends) > 1 else [],
+                    builtin_map=PYTHON_STEREOTYPE_MAP,
                 )
-                if stereotype == "Unknown":
-                    stereotype = (
-                        stereotype_from_path(str(file_path), self.config, "python")
-                        or "Component"
-                    )
                 elements.append(
                     ArchElement(
                         id=self.make_id(name, file_path),
@@ -196,18 +194,17 @@ class PythonExtractor(BaseExtractor):
         if name.startswith("_") and not is_route:
             return None
 
-        stereotype = "Controller" if is_route else stereotype_from_annotations(
-            [d.split("(")[0].split(".")[-1] for d in decorators],
-            "python",
-            PYTHON_STEREOTYPE_MAP,
-            self.config,
-        )
-        if stereotype == "Unknown":
-            stereotype = stereotype_from_path(str(file_path), self.config, "python") or "Component"
-            if not is_route and stereotype == "Component":
-                # Skip undecorated plain helpers unless convention matched
-                if not any(d for d in decorators):
-                    return None
+        if is_route:
+            stereotype = "Controller"
+        else:
+            stereotype = self.resolve_element_stereotype(
+                name=name,
+                file_path=file_path,
+                annotations=[d.split("(")[0].split(".")[-1] for d in decorators],
+                builtin_map=PYTHON_STEREOTYPE_MAP,
+            )
+            if stereotype == "Component" and not decorators:
+                return None
 
         return ArchElement(
             id=self.make_id(name, file_path),
@@ -232,14 +229,14 @@ class PythonExtractor(BaseExtractor):
                 decorators = [d for d in decorators if d]
                 bases = [self._expr_name(b) for b in node.bases]
                 bases = [b for b in bases if b]
-                stereotype = stereotype_from_annotations(
-                    decorators, "python", PYTHON_STEREOTYPE_MAP, self.config
+                stereotype = self.resolve_element_stereotype(
+                    name=node.name,
+                    file_path=file_path,
+                    annotations=decorators,
+                    extends=bases[0] if bases else None,
+                    implements=bases[1:],
+                    builtin_map=PYTHON_STEREOTYPE_MAP,
                 )
-                if stereotype == "Unknown":
-                    stereotype = (
-                        stereotype_from_path(str(file_path), self.config, "python")
-                        or "Component"
-                    )
                 elements.append(
                     ArchElement(
                         id=self.make_id(node.name, file_path),
@@ -263,12 +260,15 @@ class PythonExtractor(BaseExtractor):
                 )
                 if not decorators and not is_route:
                     continue
-                stereotype = "Controller" if is_route else stereotype_from_annotations(
-                    [d.split(".")[-1] for d in decorators],
-                    "python",
-                    PYTHON_STEREOTYPE_MAP,
-                    self.config,
-                )
+                if is_route:
+                    stereotype = "Controller"
+                else:
+                    stereotype = self.resolve_element_stereotype(
+                        name=node.name,
+                        file_path=file_path,
+                        annotations=[d.split(".")[-1] for d in decorators],
+                        builtin_map=PYTHON_STEREOTYPE_MAP,
+                    )
                 elements.append(
                     ArchElement(
                         id=self.make_id(node.name, file_path),

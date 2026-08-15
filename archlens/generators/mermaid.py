@@ -61,12 +61,14 @@ class MermaidGenerator:
         return "\n".join(lines)
 
     def _container(self, snapshot: ArchSnapshot) -> str:
-        # Group by top-level package / directory
+        # Prefer optional monorepo containers: mapping; else top-level directory
         lines = ["graph TB"]
         packages: dict[str, list] = {}
         for el in snapshot.elements:
-            parts = el.file_path.replace("\\", "/").split("/")
-            pkg = parts[0] if parts else "root"
+            pkg = el.metadata.get("container") if el.metadata else None
+            if not pkg:
+                parts = el.file_path.replace("\\", "/").split("/")
+                pkg = parts[0] if parts else "root"
             packages.setdefault(pkg, []).append(el)
 
         for pkg, els in packages.items():
@@ -75,11 +77,13 @@ class MermaidGenerator:
             label = f"{pkg}<br/>{', '.join(stereotypes[:4])}"
             lines.append(f'    {safe}["{label}"]')
 
-        # Edges between packages if any relationship crosses
         pkg_of = {}
         for el in snapshot.elements:
-            parts = el.file_path.replace("\\", "/").split("/")
-            pkg_of[el.id] = parts[0] if parts else "root"
+            pkg = el.metadata.get("container") if el.metadata else None
+            if not pkg:
+                parts = el.file_path.replace("\\", "/").split("/")
+                pkg = parts[0] if parts else "root"
+            pkg_of[el.id] = pkg
 
         seen = set()
         for rel in snapshot.relationships:

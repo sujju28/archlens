@@ -6,6 +6,18 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 from archlens.config import ArchLensConfig
+from archlens.extractors.stereotype import (  # noqa: F401 — re-export
+    CONVENTION_DIRS,
+    JAVA_STEREOTYPE_MAP,
+    PYTHON_ROUTE_METHODS,
+    PYTHON_STEREOTYPE_MAP,
+    TS_STEREOTYPE_MAP,
+    load_query_file,
+    resolve_stereotype,
+    stereotype_from_annotations,
+    stereotype_from_name,
+    stereotype_from_path,
+)
 from archlens.models import ArchElement, ArchRelationship
 
 
@@ -48,99 +60,26 @@ class BaseExtractor(ABC):
         base = ".".join(parts) if parts else name
         if qualifier:
             return f"{base}.{qualifier}"
-        # Prefer ending with class/function name
         if not base.endswith(name):
             return f"{base}.{name}" if base else name
         return base
 
-
-JAVA_STEREOTYPE_MAP = {
-    "RestController": "Controller",
-    "Controller": "Controller",
-    "Service": "Service",
-    "Repository": "Repository",
-    "Entity": "Entity",
-    "Component": "Component",
-    "Configuration": "Configuration",
-    "Bean": "Configuration",
-    "FeignClient": "Gateway",
-    "Aspect": "Middleware",
-    "ControllerAdvice": "Middleware",
-}
-
-TS_STEREOTYPE_MAP = {
-    "Controller": "Controller",
-    "Injectable": "Service",
-    "Entity": "Entity",
-    "Component": "UI Component",
-    "Module": "Configuration",
-    "NgModule": "Configuration",
-    "Middleware": "Middleware",
-    "Guard": "Middleware",
-    "Interceptor": "Middleware",
-    "Pipe": "Component",
-}
-
-PYTHON_STEREOTYPE_MAP = {
-    "dataclass": "Entity",
-    "service": "Service",
-    "repository": "Repository",
-    "component": "Component",
-    "route": "Controller",
-    "router": "Controller",
-}
-
-PYTHON_ROUTE_METHODS = {"get", "post", "put", "patch", "delete", "head", "options", "api_route"}
-
-CONVENTION_DIRS = {
-    "controllers": "Controller",
-    "controller": "Controller",
-    "services": "Service",
-    "service": "Service",
-    "repositories": "Repository",
-    "repository": "Repository",
-    "repos": "Repository",
-    "models": "Entity",
-    "entities": "Entity",
-    "middleware": "Middleware",
-    "adapters": "Gateway",
-    "clients": "Gateway",
-    "gateways": "Gateway",
-    "config": "Configuration",
-    "configs": "Configuration",
-    "components": "UI Component",
-}
-
-
-def stereotype_from_annotations(
-    annotations: list[str],
-    language: str,
-    mapping: dict[str, str],
-    config: ArchLensConfig | None = None,
-) -> str:
-    for ann in annotations:
-        if config:
-            custom = config.custom_stereotype_for(language, ann)
-            if custom:
-                return custom
-        if ann in mapping:
-            return mapping[ann]
-    return "Unknown"
-
-
-def stereotype_from_path(file_path: str, config: ArchLensConfig | None = None, language: str = "python") -> str | None:
-    if config:
-        custom = config.convention_stereotype(language, file_path)
-        if custom:
-            return custom
-    parts = Path(file_path).parts
-    for part in parts:
-        lower = part.lower()
-        if lower in CONVENTION_DIRS:
-            return CONVENTION_DIRS[lower]
-    return None
-
-
-def load_query_file(name: str) -> str:
-    query_path = Path(__file__).resolve().parent.parent / "queries" / name
-    return query_path.read_text(encoding="utf-8")
+    def resolve_element_stereotype(
+        self,
+        name: str,
+        file_path: Path | str,
+        annotations: list[str] | None = None,
+        extends: str | None = None,
+        implements: list[str] | None = None,
+        builtin_map: dict[str, str] | None = None,
+    ) -> str:
+        return resolve_stereotype(
+            language=self.language,
+            name=name,
+            file_path=str(file_path),
+            annotations=annotations,
+            extends=extends,
+            implements=implements,
+            config=self.config,
+            builtin_map=builtin_map,
+        )

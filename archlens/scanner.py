@@ -113,6 +113,12 @@ def scan_repository(
     elements, relationships = registry.scan_files(files)
     relationships = RelationshipResolver().resolve(elements, relationships)
 
+    # Attach optional monorepo container names (C4 Container mapping)
+    for el in elements:
+        container = config.container_for(el.file_path)
+        if container:
+            el.metadata["container"] = container
+
     commit_sha = commit or git_rev(repo)
     snapshot = ArchSnapshot(
         snapshot_id=str(uuid.uuid4()),
@@ -126,6 +132,9 @@ def scan_repository(
             "languages": detect_languages(repo) or config.languages,
             "file_count": len(files),
             "archlens_version": "0.1.0",
+            "containers": [
+                {"path": c.path, "name": c.name} for c in config.containers
+            ],
         },
     )
     if persist:

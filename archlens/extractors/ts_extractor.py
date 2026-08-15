@@ -11,8 +11,6 @@ import tree_sitter_typescript as tstypescript
 from archlens.extractors.base import (
     TS_STEREOTYPE_MAP,
     BaseExtractor,
-    stereotype_from_annotations,
-    stereotype_from_path,
 )
 from archlens.models import ArchElement, ArchRelationship, RelType
 
@@ -150,18 +148,13 @@ class TypeScriptExtractor(BaseExtractor):
             decorators = self._decorators(node, source)
             extends = self._heritage(node, source)
 
-            stereotype = stereotype_from_annotations(
-                decorators, "typescript", TS_STEREOTYPE_MAP, self.config
+            stereotype = self.resolve_element_stereotype(
+                name=name,
+                file_path=file_path,
+                annotations=decorators,
+                extends=extends,
+                builtin_map=TS_STEREOTYPE_MAP,
             )
-            if stereotype == "Unknown":
-                if extends and ("Component" in extends or "PureComponent" in extends):
-                    stereotype = "UI Component"
-                else:
-                    stereotype = (
-                        stereotype_from_path(str(file_path), self.config, "typescript")
-                        or "Component"
-                    )
-
             elements.append(
                 ArchElement(
                     id=self.make_id(name, file_path),

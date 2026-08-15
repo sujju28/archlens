@@ -11,8 +11,6 @@ import tree_sitter_java as tsjava
 from archlens.extractors.base import (
     JAVA_STEREOTYPE_MAP,
     BaseExtractor,
-    stereotype_from_annotations,
-    stereotype_from_path,
 )
 from archlens.models import ArchElement, ArchRelationship, RelType
 
@@ -161,11 +159,14 @@ class JavaExtractor(BaseExtractor):
                 raw = source[ifaces.start_byte : ifaces.end_byte].decode("utf-8")
                 implements = [x.strip() for x in re.sub(r"^implements\s+", "", raw).split(",") if x.strip()]
 
-            stereotype = stereotype_from_annotations(
-                annotations, "java", JAVA_STEREOTYPE_MAP, self.config
+            stereotype = self.resolve_element_stereotype(
+                name=name,
+                file_path=file_path,
+                annotations=annotations,
+                extends=extends,
+                implements=implements,
+                builtin_map=JAVA_STEREOTYPE_MAP,
             )
-            if stereotype == "Unknown":
-                stereotype = stereotype_from_path(str(file_path), self.config, "java") or "Component"
 
             eid = f"{package}.{name}" if package else self.make_id(name, file_path)
             elements.append(
@@ -208,11 +209,14 @@ class JavaExtractor(BaseExtractor):
             ann_block, name, extends, implements_raw = m.groups()
             annotations = re.findall(r"@(\w+)", ann_block or "")
             implements = [x.strip() for x in (implements_raw or "").split(",") if x.strip()]
-            stereotype = stereotype_from_annotations(
-                annotations, "java", JAVA_STEREOTYPE_MAP, self.config
+            stereotype = self.resolve_element_stereotype(
+                name=name,
+                file_path=file_path,
+                annotations=annotations,
+                extends=extends,
+                implements=implements,
+                builtin_map=JAVA_STEREOTYPE_MAP,
             )
-            if stereotype == "Unknown":
-                stereotype = stereotype_from_path(str(file_path), self.config, "java") or "Component"
             eid = f"{package}.{name}" if package else self.make_id(name, file_path)
             line = text[: m.start()].count("\n") + 1
             elements.append(

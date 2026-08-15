@@ -18,8 +18,7 @@ ArchLens treats architecture as **data extracted from code** using tree-sitter A
 
 ```bash
 pip install -e ".[dev]"
-# Optional MCP support:
-pip install -e ".[mcp]"
+# MCP is included by default; start with: archlens mcp
 ```
 
 ## Quick start
@@ -32,6 +31,33 @@ archlens diagram --format mermaid --level component
 archlens report --output docs/ARCHITECTURE.md
 archlens impact --files path/to/changed/file.py
 archlens drift --fail-on-change
+```
+
+## IDE / AI assistant setup (Phase 2)
+
+ArchLens exposes a universal **MCP** server used by Claude Code, GitHub Copilot, Cursor, Windsurf, VS Code, and Antigravity.
+
+```bash
+pip install -e .
+archlens setup-ai --platform vscode,antigravity
+archlens mcp                       # stdio MCP server (default for editors)
+```
+
+| IDE / Host | Adapter files | MCP registration |
+|------------|---------------|------------------|
+| Claude Code | `AGENTS.md`, `.claude/mcp.json` | `archlens mcp` |
+| GitHub Copilot | `.github/copilot-instructions.md`, `.vscode/settings.json` | Copilot MCP servers |
+| Cursor | `.cursorrules`, `.cursor/mcp.json` | Cursor MCP |
+| Windsurf | `.windsurfrules`, `.windsurf/mcp.json` | Windsurf MCP |
+| VS Code | `.vscode/settings.json`, `.vscode/mcp.json` | VS Code MCP hosts |
+| Antigravity | `.agents/skills/archlens/SKILL.md`, plugin under `archlens-plugin/` | MCP + skills |
+
+MCP tools: `archlens_scan`, `archlens_query`, `archlens_impact`, `archlens_drift`, `archlens_diagram`, `archlens_report`.
+
+Interactive agent (CLI fallback if Antigravity SDK is absent):
+
+```bash
+archlens agent --repo . --cli
 ```
 
 ## CLI
@@ -47,8 +73,9 @@ archlens drift --fail-on-change
 | `archlens query` | Query the architecture DB |
 | `archlens drift` | Check for architectural drift |
 | `archlens export` | Export architecture as JSON |
-| `archlens mcp` | Start MCP server for AI assistants |
-| `archlens setup-ai` | Generate platform adapter files |
+| `archlens mcp` | Start MCP server for AI assistants / IDEs |
+| `archlens setup-ai` | Generate platform adapter files for all IDEs |
+| `archlens agent` | Interactive architect agent (Antigravity or CLI) |
 
 ## Configuration
 

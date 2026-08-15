@@ -1,59 +1,106 @@
-"""Standalone ArchLens agent stub (optional Antigravity SDK).
+"""Standalone ArchLens agent.
 
-This module documents the intended standalone agent interface.
-The Antigravity SDK is optional; when unavailable, prefer `archlens mcp`.
+Prefers Google Antigravity SDK when available; otherwise runs a local
+CLI-backed interactive session usable from any terminal/IDE.
 """
 
 from __future__ import annotations
 
+import shlex
+import subprocess
+from pathlib import Path
+
 SYSTEM_PROMPT = """
-You are ArchLens Architect, an AI agent specialized in codebase architecture analysis.
+You are ArchLens Architect, specialized in codebase architecture analysis.
 
-You have the following CLI tools available:
-- `archlens scan` — Scan a repository and create an architecture snapshot
-- `archlens query` — Query the architecture database
-- `archlens impact` — Analyze impact of changes
-- `archlens diff` — Compare two architecture snapshots
-- `archlens diagram` — Generate Mermaid diagrams
-- `archlens drift` — Check for architectural drift
-- `archlens report` — Generate ARCHITECTURE.md
+CLI tools:
+- archlens scan / query / impact / diff / diagram / drift / report / mcp
 
-Your workflow:
-1. When the user asks about architecture, ensure a fresh snapshot exists first
-2. Use `archlens query` for questions about structure and dependencies
-3. Use `archlens impact` for questions about change impact
-4. Use `archlens diagram` to generate visual context
-5. Always explain WHY components are affected, not just WHAT
-6. Present Mermaid diagrams inline when they add clarity
-7. Be conservative with effort estimates
+Rules:
+1. Ensure a fresh snapshot before answering architecture questions
+2. Prefer archlens query / impact for structure and change analysis
+3. Explain WHY components are affected (dependency chains)
+4. Be conservative with effort estimates
+""".strip()
 
-The architecture database is at: {repo_path}/.archlens/archlens.db
-"""
+
+def _run(cmd: list[str]) -> str:
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    out = (result.stdout or "").strip()
+    err = (result.stderr or "").strip()
+    if result.returncode != 0:
+        return err or out or f"command failed: {' '.join(cmd)}"
+    return out
+
+
+def run_cli_session(repo_path: str) -> None:
+    """Interactive REPL that maps intents to ArchLens CLI commands."""
+    repo = str(Path(repo_path).resolve())
+    print("ArchLens Architect (CLI mode)")
+    print(f"Repository: {repo}")
+    print("Commands: scan | query <text> | impact <files...> | diagram | drift | report | help | exit\n")
+
+    while True:
+        try:
+            raw = input("You: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
+        if not raw:
+            continue
+        if raw.lower() in ("exit", "quit"):
+            break
+        if raw.lower() in ("help", "?"):
+            print(SYSTEM_PROMPT)
+            continue
+
+        parts = shlex.split(raw)
+        head = parts[0].lower()
+        if head == "scan":
+            print(_run(["archlens", "scan", "--repo", repo]))
+        elif head == "query":
+            q = " ".join(parts[1:]) or "overview"
+            print(_run(["archlens", "query", "--repo", repo, q]))
+        elif head == "impact":
+            files = parts[1:]
+            cmd = ["archlens", "impact", "--repo", repo]
+            if files:
+                cmd.extend(["--files", ",".join(files)])
+            print(_run(cmd))
+        elif head == "diagram":
+            print(_run(["archlens", "diagram", "--repo", repo, "--format", "mermaid"]))
+        elif head == "drift":
+            print(_run(["archlens", "drift", "--repo", repo, "--output", "json"]))
+        elif head == "report":
+            out = str(Path(repo) / "docs" / "ARCHITECTURE.md")
+            print(_run(["archlens", "report", "--repo", repo, "--output", out]))
+        else:
+            # Treat free text as NL query after ensuring scan exists
+            db = Path(repo) / ".archlens" / "archlens.db"
+            if not db.exists():
+                print(_run(["archlens", "scan", "--repo", repo]))
+            print(_run(["archlens", "query", "--repo", repo, raw]))
 
 
 async def run_agent(repo_path: str) -> None:
-    """Interactive agent session. Requires google.antigravity SDK."""
+    """Try Antigravity SDK; fall back to CLI session."""
     try:
-        from google.antigravity import Agent, LocalAgentConfig, types
-    except ImportError as e:
-        raise SystemExit(
-            "google.antigravity SDK not installed. "
-            "Use `archlens mcp` for the universal agent interface instead."
-        ) from e
+        from google.antigravity import Agent, LocalAgentConfig, types  # type: ignore
+    except ImportError:
+        run_cli_session(repo_path)
+        return
 
     config = LocalAgentConfig(
-        system_prompt=SYSTEM_PROMPT.format(repo_path=repo_path),
+        system_prompt=SYSTEM_PROMPT + f"\nDB: {repo_path}/.archlens/archlens.db",
         capabilities=types.CapabilitiesConfig(
             enable_shell=True,
             enable_file_read=True,
             enable_file_write=True,
         ),
     )
-
     async with Agent(config) as agent:
-        print("ArchLens Architect Agent initialized.")
+        print("ArchLens Architect Agent initialized (Antigravity).")
         print(f"Repository: {repo_path}")
-        print("Type architecture questions. Type 'exit' to quit.\n")
         while True:
             user_input = input("You: ").strip()
             if user_input.lower() in ("exit", "quit"):
@@ -62,11 +109,19 @@ async def run_agent(repo_path: str) -> None:
             print(f"\nArchLens: {await response.text()}\n")
 
 
-if __name__ == "__main__":
+def main(argv: list[str] | None = None) -> None:
     import argparse
     import asyncio
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--repo", required=True)
-    args = parser.parse_args()
-    asyncio.run(run_agent(args.repo))
+    parser = argparse.ArgumentParser(description="ArchLens standalone agent")
+    parser.add_argument("--repo", required=True, help="Path to repository")
+    parser.add_argument("--cli", action="store_true", help="Force CLI REPL mode")
+    args = parser.parse_args(argv)
+    if args.cli:
+        run_cli_session(args.repo)
+    else:
+        asyncio.run(run_agent(args.repo))
+
+
+if __name__ == "__main__":
+    main()

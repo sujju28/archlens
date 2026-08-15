@@ -1,162 +1,181 @@
-"""Generate platform adapter files for AI coding assistants."""
+"""Generate platform adapter files for AI coding assistants / IDEs."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
-AGENTS_MD = """# ArchLens: Architecture Intelligence
-
-This repository uses ArchLens for automated architecture analysis.
-The ArchLens MCP server is available with the following tools.
-
-## Available Tools (via MCP)
-
-### `archlens_scan` — Always run this first
-Scans the codebase and creates an architecture snapshot.
-Run this before answering any architecture questions.
-
-### `archlens_query` — Answer structure questions
-Query the architecture database. Supports:
-- `stereotype`: Filter by "Controller", "Service", "Repository", etc.
-- `element` + `direction`: Find who depends on or what an element depends on
-- `group_by`: "stereotype" or "layer" for overview
-
-### `archlens_impact` — Analyze change impact
-Given `files` (changed file paths) or `elements` (component names),
-traces the full dependency graph and returns directly/transitively affected
-components with risk scores. Always show the dependency chain (WHY, not just WHAT).
-
-### `archlens_drift` — Check for architectural drift
-Compares current codebase against last snapshot.
-
-### `archlens_diagram` — Generate Mermaid diagrams
-Levels: "context", "container", "component"
-
-### `archlens_report` — Generate ARCHITECTURE.md
-Creates a full architecture report with diagrams and dependency matrix.
+SHARED_WORKFLOW = """
+## Available MCP Tools
+- `archlens_scan` — Always run first to ensure a fresh snapshot
+- `archlens_query` — Elements & dependencies (NL or structured)
+- `archlens_impact` — Blast radius of file/element changes
+- `archlens_drift` — Detect architectural drift
+- `archlens_diagram` — Mermaid/Structurizr diagrams
+- `archlens_report` — Generate ARCHITECTURE.md
 
 ## Workflow Guidelines
-1. **Always scan first** if the `.archlens/` database doesn't exist or is stale
-2. **For impact questions**: scan → impact → diagram with highlights
-3. **For architecture overviews**: scan → query (group by stereotype) → diagram
-4. **Be conservative** with effort estimates
-5. **Show dependency chains** — explain WHY something is affected
+1. Always scan first if `.archlens/` is missing or stale
+2. Impact questions: scan → impact → diagram with highlights
+3. Overviews: scan → query (group_by stereotype) → diagram
+4. Show dependency chains (WHY, not just WHAT)
+5. Be conservative with effort estimates
+""".strip()
+
+AGENTS_MD = f"""# ArchLens: Architecture Intelligence
+
+This repository uses ArchLens for automated architecture analysis via MCP.
+Supported IDEs/hosts: Claude Code, GitHub Copilot, Cursor, Windsurf, VS Code, Antigravity.
+
+{SHARED_WORKFLOW}
 """
 
-COPILOT_MD = """# Architecture Analysis with ArchLens
+COPILOT_MD = f"""# Architecture Analysis with ArchLens
 
 This project uses ArchLens for architecture intelligence.
 Use the ArchLens MCP tools for architecture-related questions.
 
 ## When to use ArchLens
-- User asks about code architecture, structure, or dependencies
-- User asks "what breaks if I change X" or "what's the impact of this change"
-- User asks for an architecture diagram or documentation
-- User wants to understand how components are connected
+- Architecture, structure, or dependency questions
+- "What breaks if I change X" / PR blast radius
+- Architecture diagrams or documentation freshness
 
-## Tools
-- `archlens_scan`: Parse the codebase (always run first)
-- `archlens_query`: Find components and dependencies
-- `archlens_impact`: Analyze blast radius of changes
-- `archlens_drift`: Check if architecture docs are stale
-- `archlens_diagram`: Generate Mermaid diagrams
-- `archlens_report`: Generate full ARCHITECTURE.md
-
-## Guidelines
-- Always ensure a fresh scan exists before querying
-- For impact analysis, show the WHY (dependency chain), not just the WHAT
-- Use Mermaid diagrams to visualize results when helpful
-- Be conservative with effort estimates — overestimate rather than underestimate
+{SHARED_WORKFLOW}
 """
 
-CURSORRULES = """# ArchLens Architecture Intelligence
-
-This project has an ArchLens MCP server registered for architecture analysis.
+CURSORRULES = f"""# ArchLens Architecture Intelligence
 
 When the user asks about architecture, dependencies, impact of changes,
-or code structure, use the ArchLens MCP tools:
+or code structure, use the ArchLens MCP tools.
 
-1. `archlens_scan` — Always run first to ensure fresh data
-2. `archlens_query` — Find components by stereotype or trace dependencies
-3. `archlens_impact` — Analyze what breaks when files change
-4. `archlens_diagram` — Generate Mermaid component diagrams
-5. `archlens_report` — Generate full ARCHITECTURE.md
-
-Always show dependency chains for impact analysis. Be conservative with estimates.
+{SHARED_WORKFLOW}
 """
 
-ANTIGRAVITY_SKILL = """---
+WINDSURF_RULES = f"""# ArchLens Architecture Intelligence (Windsurf)
+
+Register and use the ArchLens MCP server for architecture questions.
+
+{SHARED_WORKFLOW}
+"""
+
+ANTIGRAVITY_SKILL = f"""---
 name: archlens
 description: >-
   Architecture intelligence for any codebase. Use when the user asks about
   code architecture, dependencies, impact of changes, effort estimation,
   architecture diagrams, or documentation freshness. Supports Java, TypeScript/React,
-  and Python codebases. Works via MCP tools.
+  and Python. Works via MCP tools across IDEs.
 ---
 
 # ArchLens Skill
 
-## Overview
-ArchLens scans codebases using tree-sitter AST parsing to extract architectural
-elements and relationships, stores them in SQLite, and provides querying, impact
-analysis, drift detection, and diagram generation via MCP tools.
-
-## MCP Tools Available
-
-| Tool | When to Use |
-|------|-------------|
-| `archlens_scan` | First action — always scan before querying |
-| `archlens_query` | "What depends on X?", "Show all services", structure questions |
-| `archlens_impact` | "What breaks if I change X?", "Estimate effort for this feature" |
-| `archlens_drift` | "Is the architecture doc up to date?" |
-| `archlens_diagram` | "Show me the component diagram" |
-| `archlens_report` | "Generate ARCHITECTURE.md" |
-
-## Important Rules
-- **Always scan first** — never answer architecture questions without a fresh snapshot
-- **Show dependency chains** — explain WHY something is affected, not just WHAT
-- **Distinguish direct vs. transitive** — direct is certain, transitive is potential
-- **Be conservative** — overestimate effort rather than underestimate
+{SHARED_WORKFLOW}
 """
 
-MCP_JSON = """{
-  "mcpServers": {
+MCP_SERVER_BLOCK = {
     "archlens": {
-      "command": "archlens",
-      "args": ["mcp"]
+        "command": "archlens",
+        "args": ["mcp"],
     }
-  }
 }
-"""
+
+MCP_JSON = json.dumps({"mcpServers": MCP_SERVER_BLOCK}, indent=2) + "\n"
+
+VSCODE_MCP_SETTINGS = {
+    "github.copilot.chat.mcpServers": MCP_SERVER_BLOCK,
+    "mcp": {"servers": MCP_SERVER_BLOCK},
+}
+
+ALL_PLATFORMS = {
+    "claude",
+    "copilot",
+    "cursor",
+    "windsurf",
+    "antigravity",
+    "vscode",
+}
 
 
-def generate_adapters(repo: Path, platforms: list[str]) -> list[Path]:
-    all_platforms = {"claude", "copilot", "cursor", "antigravity"}
+def _merge_json(path: Path, patch: dict) -> None:
+    existing: dict = {}
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8")) or {}
+        except json.JSONDecodeError:
+            existing = {}
+    # Deep-ish merge for top-level keys
+    for key, value in patch.items():
+        if isinstance(value, dict) and isinstance(existing.get(key), dict):
+            merged = dict(existing[key])
+            merged.update(value)
+            existing[key] = merged
+        else:
+            existing[key] = value
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
+
+
+def generate_adapters(
+    repo: Path,
+    platforms: list[str],
+    *,
+    overwrite: bool = False,
+) -> list[Path]:
     if "all" in platforms:
-        selected = all_platforms
+        selected = set(ALL_PLATFORMS)
     else:
-        selected = set(platforms) & all_platforms
+        selected = set(platforms) & ALL_PLATFORMS
 
-    created: list[Path] = []
+    touched: list[Path] = []
 
-    def write(path: Path, content: str) -> None:
+    def write_text(path: Path, content: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        if not path.exists():
-            path.write_text(content, encoding="utf-8")
-            created.append(path)
+        if path.exists() and not overwrite:
+            return
+        path.write_text(content, encoding="utf-8")
+        touched.append(path)
+
+    def write_json(path: Path, data: dict) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists() and not overwrite:
+            # Still merge MCP registration into existing JSON configs
+            if path.suffix == ".json":
+                before = path.read_text(encoding="utf-8")
+                _merge_json(path, data)
+                after = path.read_text(encoding="utf-8")
+                if before != after:
+                    touched.append(path)
+            return
+        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        touched.append(path)
 
     if "claude" in selected:
-        write(repo / "AGENTS.md", AGENTS_MD)
-        write(repo / ".claude" / "mcp.json", MCP_JSON)
+        write_text(repo / "AGENTS.md", AGENTS_MD)
+        write_json(repo / ".claude" / "mcp.json", {"mcpServers": MCP_SERVER_BLOCK})
 
     if "copilot" in selected:
-        write(repo / ".github" / "copilot-instructions.md", COPILOT_MD)
+        write_text(repo / ".github" / "copilot-instructions.md", COPILOT_MD)
 
     if "cursor" in selected:
-        write(repo / ".cursorrules", CURSORRULES)
-        write(repo / ".cursor" / "mcp.json", MCP_JSON)
+        write_text(repo / ".cursorrules", CURSORRULES)
+        write_json(repo / ".cursor" / "mcp.json", {"mcpServers": MCP_SERVER_BLOCK})
+
+    if "windsurf" in selected:
+        write_text(repo / ".windsurfrules", WINDSURF_RULES)
+        write_json(repo / ".windsurf" / "mcp.json", {"mcpServers": MCP_SERVER_BLOCK})
+
+    if "vscode" in selected or "copilot" in selected:
+        # Merge MCP registration into VS Code settings without clobbering user settings
+        settings_path = repo / ".vscode" / "settings.json"
+        before = settings_path.read_text(encoding="utf-8") if settings_path.exists() else ""
+        _merge_json(settings_path, VSCODE_MCP_SETTINGS)
+        after = settings_path.read_text(encoding="utf-8")
+        if before != after:
+            touched.append(settings_path)
+        write_json(repo / ".vscode" / "mcp.json", {"servers": MCP_SERVER_BLOCK})
 
     if "antigravity" in selected:
-        write(repo / ".agents" / "skills" / "archlens" / "SKILL.md", ANTIGRAVITY_SKILL)
+        write_text(repo / ".agents" / "skills" / "archlens" / "SKILL.md", ANTIGRAVITY_SKILL)
+        write_json(repo / ".agents" / "mcp.json", {"mcpServers": MCP_SERVER_BLOCK})
 
-    return created
+    return touched

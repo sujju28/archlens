@@ -207,83 +207,52 @@ def report(repo: str | None, output: str):
 @click.option("--stereotype", default=None)
 @click.option("--element", default=None)
 @click.option("--direction", type=click.Choice(["upstream", "downstream", "both"]), default="both")
-def query(repo: str | None, query_text: str | None, stereotype: str | None, element: str | None, direction: str):
-    """Query the architecture database."""
+@click.option("--group-by", "group_by", default=None, type=click.Choice(["stereotype", "layer"]))
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON including query tier")
+def query(
+    repo: str | None,
+    query_text: str | None,
+    stereotype: str | None,
+    element: str | None,
+    direction: str,
+    group_by: str | None,
+    as_json: bool,
+):
+    """Query the architecture database (NL 3-tier or structured)."""
+    from archlens.analysis.nl_query import structured_query
+
     root = _repo_path(repo)
     snapshot = _store(root).get_latest_snapshot()
     if not snapshot:
         console.print("[red]No snapshot. Run archlens scan first.[/red]")
         sys.exit(1)
 
-    # Parse NL query into filters
-    if query_text and not element and not stereotype:
-        q = query_text.lower()
-        m = re.search(r"(?:what depends on|who uses|dependents of)\s+(\w+)", q)
-        if m:
-            element, direction = m.group(1), "upstream"
-        m = re.search(r"(?:what does)\s+(\w+)\s+depend", q)
-        if m:
-            element, direction = m.group(1), "downstream"
-        m = re.search(r"(?:show|list|find)\s+all\s+(\w+)", q)
-        if m:
-            stereotype = m.group(1).rstrip("s").capitalize()
-            if stereotype.lower() == "ui component":
-                stereotype = "UI Component"
+    payload = structured_query(
+        snapshot,
+        stereotype=stereotype,
+        element=element,
+        direction=direction,
+        group_by=group_by,
+        query=query_text,
+    )
+    results = payload.get("results") or []
+    if as_json:
+        click.echo(json.dumps(payload, indent=2))
+        return
 
-    results = []
-    if stereotype:
-        results = [
-            {"name": e.name, "stereotype": e.stereotype, "language": e.language, "file_path": e.file_path}
-            for e in snapshot.elements
-            if e.stereotype.lower() == stereotype.lower()
-        ]
-    elif element:
-        by_id = {e.id: e for e in snapshot.elements}
-        targets = [e for e in snapshot.elements if e.name.lower() == element.lower() or element.lower() in e.id.lower()]
-        target_ids = {e.id for e in targets}
-        if direction in ("upstream", "both"):
-            for r in snapshot.relationships:
-                if any(t in r.target_id or r.target_id in target_ids for t in target_ids) or any(
-                    element.lower() in r.target_id.lower() for _ in [0]
-                ):
-                    if r.target_id in target_ids or element.lower() in r.target_id.lower():
-                        src = by_id.get(r.source_id)
-                        if src:
-                            results.append(
-                                {
-                                    "name": src.name,
-                                    "stereotype": src.stereotype,
-                                    "file_path": src.file_path,
-                                    "rel_type": r.rel_type,
-                                    "direction": "upstream",
-                                }
-                            )
-        if direction in ("downstream", "both"):
-            for r in snapshot.relationships:
-                if r.source_id in target_ids or element.lower() in r.source_id.lower():
-                    tgt = by_id.get(r.target_id)
-                    if tgt:
-                        results.append(
-                            {
-                                "name": tgt.name,
-                                "stereotype": tgt.stereotype,
-                                "file_path": tgt.file_path,
-                                "rel_type": r.rel_type,
-                                "direction": "downstream",
-                            }
-                        )
-    else:
-        results = [
-            {"name": e.name, "stereotype": e.stereotype, "language": e.language, "file_path": e.file_path}
-            for e in snapshot.elements
-        ]
+    if payload.get("tier") == "tier3":
+        console.print(f"[yellow]{payload.get('error')}[/yellow]")
+        console.print(payload.get("hint", ""))
+        return
 
-    table = Table(title=f"Query results ({len(results)})")
+    title = f"Query results ({payload.get('result_count', len(results))}) [{payload.get('tier', '?')}]"
+    table = Table(title=title)
     if results:
-        for col in results[0]:
+        cols = list(results[0].keys())
+        for col in cols:
             table.add_column(col)
         for row in results:
-            table.add_row(*[str(row[c]) for c in results[0]])
+            table.add_row(*[str(row.get(c, "")) for c in cols])
         console.print(table)
     else:
         console.print("[yellow]No results.[/yellow]")
@@ -356,31 +325,50 @@ def export(repo: str | None, fmt: str, output: str | None):
     "--platform",
     "platforms",
     default="all",
-    help="claude,copilot,cursor,antigravity,all",
+    help="claude,copilot,cursor,windsurf,vscode,antigravity,all",
 )
-def setup_ai(repo: str | None, platforms: str):
-    """Generate AI assistant adapter files for the repository."""
+@click.option("--overwrite", is_flag=True, help="Overwrite existing adapter files")
+def setup_ai(repo: str | None, platforms: str, overwrite: bool):
+    """Generate AI/IDE adapter files (Claude, Copilot, Cursor, Windsurf, VS Code, Antigravity)."""
     from archlens.setup_ai import generate_adapters
 
     root = _repo_path(repo)
     selected = [p.strip() for p in platforms.split(",")] if platforms != "all" else ["all"]
-    created = generate_adapters(root, selected)
+    created = generate_adapters(root, selected, overwrite=overwrite)
+    if not created:
+        console.print("[yellow]No new adapter files written (already present). Use --overwrite to replace.[/yellow]")
     for path in created:
-        console.print(f"  [green]created[/green] {path}")
+        console.print(f"  [green]updated[/green] {path}")
     console.print(f"[green]AI adapters ready in[/green] {root}")
+    console.print("Then register MCP in your IDE, or rely on generated mcp.json / settings.json entries.")
+    console.print("Start server with: [cyan]archlens mcp[/cyan]")
+
+
+@cli.command()
+@click.option("--repo", default=None)
+@click.option("--cli", "cli_mode", is_flag=True, help="Force local CLI REPL (no Antigravity SDK)")
+def agent(repo: str | None, cli_mode: bool):
+    """Start the ArchLens architect agent (Antigravity or CLI fallback)."""
+    from archlens.agent.standalone import main as agent_main
+
+    root = str(_repo_path(repo))
+    argv = ["--repo", root]
+    if cli_mode:
+        argv.append("--cli")
+    agent_main(argv)
 
 
 @cli.command()
 @click.option("--transport", type=click.Choice(["stdio", "sse"]), default="stdio")
 @click.option("--port", type=int, default=8080)
 def mcp(transport: str, port: int):
-    """Start the ArchLens MCP server for AI coding assistants."""
+    """Start the ArchLens MCP server for AI coding assistants / IDEs."""
     try:
         from archlens.mcp_server import run_mcp
     except ImportError as e:
         console.print(
             "[red]MCP dependencies not installed.[/red] "
-            "Install with: pip install 'archlens[mcp]' or pip install mcp"
+            "Reinstall with: pip install archlens  (mcp is a core dependency)"
         )
         console.print(f"Details: {e}")
         sys.exit(1)

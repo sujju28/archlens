@@ -171,13 +171,20 @@ def diagram(repo: str | None, fmt: str, level: str, highlight: str | None, outpu
         console.print("[red]No snapshot. Run archlens scan first.[/red]")
         sys.exit(1)
     hl = _split_list(highlight)
+    cfg = load_config(root)
     if fmt == "structurizr":
         content = StructurizrExporter().generate(snapshot, level=level)
     else:
-        content = MermaidGenerator().generate(snapshot, level=level, highlight=hl)
+        content = MermaidGenerator(max_edges=cfg.diagrams.max_edges).generate(
+            snapshot, level=level, highlight=hl
+        )
     if output:
-        Path(output).write_text(content, encoding="utf-8")
-        console.print(f"Wrote diagram to {output}")
+        out = Path(output)
+        if not out.is_absolute():
+            out = root / out
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(content, encoding="utf-8")
+        console.print(f"Wrote diagram to {out}")
     else:
         click.echo(content)
 
@@ -192,13 +199,29 @@ def report(repo: str | None, output: str):
     if not snapshot:
         console.print("[red]No snapshot. Run archlens scan first.[/red]")
         sys.exit(1)
-    md = MarkdownReportGenerator().generate(snapshot)
+    cfg = load_config(root)
     out = Path(output)
     if not out.is_absolute():
         out = root / out
     out.parent.mkdir(parents=True, exist_ok=True)
+
+    diagram_dir = out.parent / "architecture"
+    component_mmd = diagram_dir / "components.mmd"
+    rel_link = f"{diagram_dir.name}/{component_mmd.name}"
+
+    from archlens.analysis.health import HealthScorer
+
+    health = HealthScorer().analyze(snapshot, store=_store(root))
+    md = MarkdownReportGenerator(max_edges=cfg.diagrams.max_edges).generate(
+        snapshot,
+        health=health,
+        component_diagram_path=component_mmd,
+        component_diagram_relpath=rel_link,
+    )
     out.write_text(md, encoding="utf-8")
     console.print(f"[green]Report written to[/green] {out}")
+    if component_mmd.exists():
+        console.print(f"[green]Component diagram written to[/green] {component_mmd}")
 
 
 @cli.command()

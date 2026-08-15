@@ -100,6 +100,7 @@ def tool_diagram(
     format: str = "mermaid",
     highlight: list[str] | None = None,
 ) -> str:
+    from archlens.config import load_config
     from archlens.generators.mermaid import MermaidGenerator
     from archlens.generators.structurizr import StructurizrExporter
     from archlens.storage.sqlite_store import SQLiteStore, default_db_path
@@ -109,10 +110,14 @@ def tool_diagram(
         return json.dumps({"error": "No snapshot. Run archlens_scan first."})
     if format == "structurizr":
         return StructurizrExporter().generate(snap, level=level)
-    return MermaidGenerator().generate(snap, level=level, highlight=highlight)
+    max_edges = load_config(repo_path).diagrams.max_edges
+    return MermaidGenerator(max_edges=max_edges).generate(
+        snap, level=level, highlight=highlight
+    )
 
 
 def tool_report(repo_path: str, output_path: str | None = None) -> str:
+    from archlens.config import load_config
     from archlens.generators.markdown_report import MarkdownReportGenerator
     from archlens.storage.sqlite_store import SQLiteStore, default_db_path
 
@@ -121,12 +126,25 @@ def tool_report(repo_path: str, output_path: str | None = None) -> str:
         return json.dumps({"error": "No snapshot. Run archlens_scan first."})
     out = Path(output_path) if output_path else Path(repo_path) / "docs" / "ARCHITECTURE.md"
     out.parent.mkdir(parents=True, exist_ok=True)
-    md = MarkdownReportGenerator().generate(snap)
+    max_edges = load_config(repo_path).diagrams.max_edges
+    component_mmd = out.parent / "architecture" / "components.mmd"
+    rel_link = f"{component_mmd.parent.name}/{component_mmd.name}"
+    from archlens.analysis.health import HealthScorer
+
+    store = SQLiteStore(default_db_path(repo_path))
+    health = HealthScorer().analyze(snap, store=store)
+    md = MarkdownReportGenerator(max_edges=max_edges).generate(
+        snap,
+        health=health,
+        component_diagram_path=component_mmd,
+        component_diagram_relpath=rel_link,
+    )
     out.write_text(md, encoding="utf-8")
     return json.dumps(
         {
             "status": "success",
             "report_path": str(out),
+            "component_diagram_path": str(component_mmd) if component_mmd.exists() else None,
             "elements": len(snap.elements),
             "relationships": len(snap.relationships),
         },

@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from archlens.models import ArchSnapshot
+from archlens.models import ArchElement, ArchRelationship, ArchSnapshot
+
+# Stay well under Mermaid's secure default (500). Preview hosts often fail at
+# edges.length === maxEdges when adding the next edge, and some VS Code
+# previews accumulate edges across multiple ```mermaid blocks on one page.
+DEFAULT_MAX_EDGES = 400
 
 LAYER_ORDER = [
     ("Controller", "API Layer"),
@@ -17,8 +22,25 @@ LAYER_ORDER = [
     ("Component", "Components"),
 ]
 
+_STEREOTYPE_PRIORITY = {
+    "Controller": 100,
+    "Gateway": 95,
+    "Middleware": 90,
+    "Service": 80,
+    "Worker": 75,
+    "Repository": 70,
+    "Entity": 60,
+    "Configuration": 55,
+    "UI Component": 50,
+    "Component": 10,
+}
+
 
 class MermaidGenerator:
+    def __init__(self, max_edges: int = DEFAULT_MAX_EDGES):
+        # max_edges <= 0 means no cap (for .mmd export / mermaid.live).
+        self.max_edges = max_edges if max_edges <= 0 else max(1, max_edges)
+
     def generate(
         self,
         snapshot: ArchSnapshot,
@@ -33,9 +55,18 @@ class MermaidGenerator:
         return self._component(snapshot, highlight)
 
     def _component(self, snapshot: ArchSnapshot, highlight: set[str]) -> str:
-        lines = ["graph LR"]
-        by_layer: dict[str, list] = {}
+        by_id = {e.id: e for e in snapshot.elements}
+        selected = self._select_relationships(snapshot.relationships, by_id)
+        kept_ids = {r.source_id for r in selected} | {r.target_id for r in selected}
         for el in snapshot.elements:
+            if el.name in highlight or el.id in highlight:
+                kept_ids.add(el.id)
+
+        lines = ["graph LR"]
+        by_layer: dict[str, list[ArchElement]] = {}
+        for el in snapshot.elements:
+            if el.id not in kept_ids:
+                continue
             layer = self._layer_for(el.stereotype)
             by_layer.setdefault(layer, []).append(el)
 
@@ -51,17 +82,42 @@ class MermaidGenerator:
                     lines.append(f'        {node_id}["{label}"]')
             lines.append("    end")
 
-        for rel in snapshot.relationships:
+        for rel in selected:
             src = self._safe_id(rel.source_id)
             tgt = self._safe_id(rel.target_id)
-            lines.append(f"    {src} -->|{rel.rel_type}| {tgt}")
+            # Avoid labeled edges: some Mermaid hosts mis-count `|label|` links.
+            lines.append(f"    {src} --> {tgt}")
 
         if highlight:
             lines.append("    classDef highlight fill:#f96,stroke:#333,stroke-width:2px")
+
+        truncated = len(snapshot.relationships) - len(selected)
+        if truncated > 0:
+            lines.append(
+                f"    %% truncated {truncated} of {len(snapshot.relationships)} "
+                f"edges (maxEdges={self.max_edges})"
+            )
         return "\n".join(lines)
 
+    def _select_relationships(
+        self,
+        relationships: list[ArchRelationship],
+        by_id: dict[str, ArchElement],
+    ) -> list[ArchRelationship]:
+        if self.max_edges <= 0 or len(relationships) <= self.max_edges:
+            return list(relationships)
+
+        def score(rel: ArchRelationship) -> tuple[int, str, str]:
+            src = by_id.get(rel.source_id)
+            tgt = by_id.get(rel.target_id)
+            s = _STEREOTYPE_PRIORITY.get(src.stereotype if src else "", 0)
+            t = _STEREOTYPE_PRIORITY.get(tgt.stereotype if tgt else "", 0)
+            return (max(s, t) * 2 + min(s, t), rel.source_id, rel.target_id)
+
+        ranked = sorted(relationships, key=score, reverse=True)
+        return ranked[: self.max_edges]
+
     def _container(self, snapshot: ArchSnapshot) -> str:
-        # Prefer optional monorepo containers: mapping; else top-level directory
         lines = ["graph TB"]
         packages: dict[str, list] = {}
         for el in snapshot.elements:
@@ -86,6 +142,7 @@ class MermaidGenerator:
             pkg_of[el.id] = pkg
 
         seen = set()
+        edges: list[tuple[str, str]] = []
         for rel in snapshot.relationships:
             a = pkg_of.get(rel.source_id)
             b = pkg_of.get(rel.target_id)
@@ -93,7 +150,10 @@ class MermaidGenerator:
                 key = (a, b)
                 if key not in seen:
                     seen.add(key)
-                    lines.append(f"    {self._safe_id(a)} --> {self._safe_id(b)}")
+                    edges.append(key)
+
+        for a, b in (edges if self.max_edges <= 0 else edges[: self.max_edges]):
+            lines.append(f"    {self._safe_id(a)} --> {self._safe_id(b)}")
         return "\n".join(lines)
 
     def _context(self, snapshot: ArchSnapshot) -> str:

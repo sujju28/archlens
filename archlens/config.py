@@ -51,6 +51,9 @@ class DiagramConfig(BaseModel):
     default_format: str = "mermaid"
     default_level: str = "component"
     output_dir: str = "docs/architecture/"
+    # Stay under Mermaid's secure maxEdges default (500); leave headroom for
+    # multiple ```mermaid blocks and host off-by-one checks.
+    max_edges: int = 400
 
 
 class ImpactConfig(BaseModel):
@@ -163,6 +166,7 @@ diagrams:
   default_format: "mermaid"
   default_level: "component"
   output_dir: "docs/architecture/"
+  max_edges: 400
 
 impact:
   max_depth: 5

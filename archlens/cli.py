@@ -473,6 +473,42 @@ def contracts_cmd(repo: str | None, repos: str | None, output: str | None):
     )
 
 
+@cli.command("cdm")
+@click.option("--repo", default=None)
+@click.option("--output", default="docs/CANONICAL_DATA_MODEL.md")
+@click.option("--json-output", default=None, help="Also write machine-readable CDM JSON")
+def cdm_cmd(repo: str | None, output: str, json_output: str | None):
+    """Generate a canonical data model from Entity / PO / JPA types."""
+    from archlens.analysis.data_model import build_canonical_data_model
+    from archlens.generators.cdm_report import CdmReportGenerator
+
+    root = _repo_path(repo)
+    snapshot = _store(root).get_latest_snapshot()
+    if not snapshot:
+        console.print("[red]No snapshot. Run archlens scan first.[/red]")
+        sys.exit(1)
+    cdm = build_canonical_data_model(snapshot)
+    md = CdmReportGenerator().generate(snapshot, cdm)
+    out = Path(output)
+    if not out.is_absolute():
+        out = root / out
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(md, encoding="utf-8")
+    console.print(f"[green]CDM written to[/green] {out}")
+    console.print(
+        f"  entities={cdm.stats.get('entity_count')} "
+        f"associations={cdm.stats.get('association_count')} "
+        f"columns={cdm.stats.get('columns_total')}"
+    )
+    if json_output:
+        jout = Path(json_output)
+        if not jout.is_absolute():
+            jout = root / jout
+        jout.parent.mkdir(parents=True, exist_ok=True)
+        jout.write_text(json.dumps(cdm.to_dict(), indent=2), encoding="utf-8")
+        console.print(f"[green]CDM JSON written to[/green] {jout}")
+
+
 @cli.command("health")
 @click.option("--repo", default=None)
 @click.option("--output", default=None)

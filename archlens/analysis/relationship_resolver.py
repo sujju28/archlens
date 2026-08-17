@@ -97,4 +97,6 @@ class RelationshipResolver:
                         )
                     )
 
-        return resolved
+        from archlens.analysis.data_model import link_entity_foreign_keys
+
+        return link_entity_foreign_keys(elements, resolved)

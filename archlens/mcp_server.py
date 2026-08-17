@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from archlens.mcp_tools import (
     tool_aggregate,
+    tool_cdm,
     tool_contracts,
     tool_diagram,
     tool_drift,
@@ -113,6 +114,11 @@ def run_mcp(transport: str = "stdio", port: int = 8080) -> None:
     def archlens_health(repo_path: str, trends: bool = True) -> str:
         """Score architecture health (cycles, coupling, layer violations)."""
         return tool_health(repo_path, trends=trends)
+
+    @mcp.tool(name="archlens_cdm")
+    def archlens_cdm(repo_path: str, output_path: str | None = None) -> str:
+        """Generate a canonical data model (CDM) from Entity/PO/JPA types."""
+        return tool_cdm(repo_path, output_path=output_path)
 
     @mcp.tool(name="archlens_federate")
     def archlens_federate(url: str) -> str:

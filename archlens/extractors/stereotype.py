@@ -98,6 +98,9 @@ NAME_SUFFIXES: list[tuple[str, str]] = [
     ("Component", "UI Component"),
 ]
 
+# Adempiere / metasfresh persistent object interfaces & generated classes
+_PO_NAME = re.compile(r"^[IX]_([A-Z][\w]*)$")
+
 INHERITANCE_SIGNALS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"(JpaRepository|CrudRepository|PagingAndSortingRepository|MongoRepository)\b"), "Repository"),
     (re.compile(r"\bRepository\b"), "Repository"),
@@ -105,6 +108,8 @@ INHERITANCE_SIGNALS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\b(APIView|ViewSet|GenericAPIView)\b"), "Controller"),
     (re.compile(r"\b(BaseHTTPMiddleware|MiddlewareMixin)\b"), "Middleware"),
     (re.compile(r"\b(BaseModel|Model)\b"), "Entity"),
+    (re.compile(r"\bPO\b"), "Entity"),  # Adempiere Persistent Object
+    (re.compile(r"\bI_Persistent\b"), "Entity"),
 ]
 
 
@@ -148,8 +153,12 @@ def resolve_stereotype(
         # Interface named *Repository
         if re.search(r"Repository$", base):
             return "Repository"
+        # Implements I_C_Order / org.compiere.model.I_* → Entity
+        short_base = base.split(".")[-1]
+        if _PO_NAME.match(short_base) or short_base.startswith("I_"):
+            return "Entity"
 
-    # 3. Naming convention
+    # 3. Naming convention (includes I_/X_ table models)
     named = stereotype_from_name(name)
     if named:
         return named
@@ -164,6 +173,8 @@ def resolve_stereotype(
 
 
 def stereotype_from_name(name: str) -> str | None:
+    if _PO_NAME.match(name):
+        return "Entity"
     for suffix, stereo in NAME_SUFFIXES:
         if name.endswith(suffix) and name != suffix:
             return stereo

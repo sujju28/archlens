@@ -1,6 +1,6 @@
 # ArchLens
 
-Living architecture intelligence for any codebase — scan, query, detect drift, and analyze the impact of changes.
+Living architecture intelligence for any codebase — scan, query, detect drift, analyze change impact, and build a **canonical data model** from entities.
 
 ArchLens treats architecture as **data extracted from code** using tree-sitter AST parsing. It builds a C4-compatible model in SQLite and exposes a CLI (and optional MCP server) for CI and AI assistants.
 
@@ -8,6 +8,7 @@ ArchLens treats architecture as **data extracted from code** using tree-sitter A
 
 - **Multi-language extraction** — Java/Spring, TypeScript/React/NestJS, Python/FastAPI
 - **SQLite snapshots** — versioned architecture models stored in `.archlens/`
+- **Canonical data model (CDM)** — infer tables, columns, and FK associations from JPA `@Entity` and Adempiere/metasfresh `I_*` / `X_*` PO models (`archlens cdm`)
 - **Drift detection** — compare current code against the last snapshot
 - **Impact analysis** — blast radius of file or component changes
 - **Mermaid / Structurizr diagrams** — C4 context, container, and component views
@@ -29,6 +30,7 @@ archlens init
 archlens scan
 archlens diagram --format mermaid --level component
 archlens report --output docs/ARCHITECTURE.md
+archlens cdm --output docs/CANONICAL_DATA_MODEL.md
 archlens impact --files path/to/changed/file.py
 archlens drift --fail-on-change
 ```
@@ -52,7 +54,7 @@ archlens mcp                       # stdio MCP server (default for editors)
 | VS Code | `.vscode/settings.json`, `.vscode/mcp.json` | VS Code MCP hosts |
 | Antigravity | `.agents/skills/archlens/SKILL.md`, plugin under `archlens-plugin/` | MCP + skills |
 
-MCP tools: `archlens_scan`, `archlens_query`, `archlens_impact`, `archlens_drift`, `archlens_diagram`, `archlens_report`.
+MCP tools: `archlens_scan`, `archlens_query`, `archlens_impact`, `archlens_drift`, `archlens_diagram`, `archlens_report`, `archlens_cdm`, `archlens_health`, …
 
 Interactive agent (CLI fallback if Antigravity SDK is absent):
 
@@ -80,6 +82,7 @@ archlens agent --repo . --cli
 | `archlens events` | Detect Kafka/RabbitMQ/SQS producers & consumers |
 | `archlens contracts` | Link services via OpenAPI + HTTP call sites |
 | `archlens health` | Score coupling, cycles, layer violations |
+| `archlens cdm` | Generate canonical data model from Entity/PO/JPA types |
 | `archlens federate` | Fetch remote architecture JSON / HTTP export |
 
 ## Phase 3 (distributed)

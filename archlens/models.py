@@ -24,6 +24,7 @@ class RelType(str, Enum):
     ROUTES_TO = "routes_to"
     COMPOSES = "composes"
     IMPLEMENTS = "implements"
+    REFERENCES = "references"  # data-model FK / association
 
 
 class Stereotype(str, Enum):

@@ -198,6 +198,28 @@ def tool_health(repo_path: str, trends: bool = True) -> str:
     return json.dumps(report.to_dict(), indent=2)
 
 
+def tool_cdm(repo_path: str, output_path: str | None = None) -> str:
+    from archlens.analysis.data_model import build_canonical_data_model
+    from archlens.generators.cdm_report import CdmReportGenerator
+    from archlens.storage.sqlite_store import SQLiteStore, default_db_path
+
+    snap = SQLiteStore(default_db_path(repo_path)).get_latest_snapshot()
+    if not snap:
+        return json.dumps({"error": "No snapshot. Run archlens_scan first."})
+    cdm = build_canonical_data_model(snap)
+    out = Path(output_path) if output_path else Path(repo_path) / "docs" / "CANONICAL_DATA_MODEL.md"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(CdmReportGenerator().generate(snap, cdm), encoding="utf-8")
+    return json.dumps(
+        {
+            "status": "success",
+            "report_path": str(out),
+            **cdm.stats,
+        },
+        indent=2,
+    )
+
+
 def tool_federate(url: str) -> str:
     from archlens.distributed.federation import fetch_remote_architecture
 
@@ -225,5 +247,6 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {"name": "archlens_events", "description": "Detect Kafka/RabbitMQ/SQS event producers and consumers."},
     {"name": "archlens_contracts", "description": "Link services via OpenAPI specs and HTTP call sites."},
     {"name": "archlens_health", "description": "Score architecture health (cycles, coupling, layer violations)."},
+    {"name": "archlens_cdm", "description": "Generate a canonical data model from Entity/PO/JPA types."},
     {"name": "archlens_federate", "description": "Fetch architecture JSON from a remote ArchLens/HTTP URL."},
 ]

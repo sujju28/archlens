@@ -97,6 +97,42 @@ class RelationshipResolver:
                         )
                     )
 
+        # Interface → implementation: if A injects IFoo and B implements IFoo, link A → B
+        implements_of: dict[str, list[str]] = {}
+        for rel in list(resolved):
+            if rel.rel_type == RelType.IMPLEMENTS.value:
+                implements_of.setdefault(rel.target_id, []).append(rel.source_id)
+        # Also index by implemented interface name
+        iface_by_name: dict[str, str] = {}
+        for e in elements:
+            # Interfaces often stereotype Component; track by name
+            iface_by_name[e.name] = e.id
+        for rel in list(resolved):
+            if rel.rel_type != RelType.INJECTS.value:
+                continue
+            target = by_id.get(rel.target_id)
+            if not target:
+                continue
+            impl_ids = implements_of.get(target.id, [])
+            # If inject target has no implements edge pointing to it, try name-based
+            if not impl_ids:
+                # Anyone who lists this name in implements
+                for e in elements:
+                    if target.name in (e.implements or []):
+                        impl_ids.append(e.id)
+            for impl_id in impl_ids:
+                if impl_id == rel.source_id:
+                    continue
+                add(
+                    ArchRelationship(
+                        source_id=rel.source_id,
+                        target_id=impl_id,
+                        rel_type=RelType.INJECTS.value,
+                        description=f"DI via {target.name} → impl",
+                        technology="interface resolution",
+                    )
+                )
+
         from archlens.analysis.data_model import link_entity_foreign_keys
         from archlens.extractors.mainframe_stereotype import infer_mainframe_stereotype
 

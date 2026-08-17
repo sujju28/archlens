@@ -48,6 +48,9 @@ def init(repo: str | None, lang: str | None):
     arch_dir.mkdir(parents=True, exist_ok=True)
     (arch_dir / ".gitkeep").touch()
     cfg_path = write_default_config(root)
+    from archlens.analysis.intents import write_example_intents
+
+    intents_path = write_example_intents(root)
     if lang:
         # Update languages in config file lightly
         text = cfg_path.read_text(encoding="utf-8")
@@ -64,6 +67,7 @@ def init(repo: str | None, lang: str | None):
     _store(root)
     console.print(f"[green]Initialized ArchLens in[/green] {root}")
     console.print(f"  Config: {cfg_path}")
+    console.print(f"  Intents: {intents_path}")
     console.print(f"  Database: {default_db_path(root)}")
 
 
@@ -89,7 +93,15 @@ def scan(repo: str | None, commit: str | None):
 @click.option("--repo", default=None)
 @click.option("--from", "from_ref", default=None, help="From snapshot id or commit")
 @click.option("--to", "to_ref", default=None, help="To snapshot id or commit (default: latest)")
-def diff(repo: str | None, from_ref: str | None, to_ref: str | None):
+@click.option("--narrative/--no-narrative", default=False, help="Print time-travel narrative")
+@click.option("--output", default=None, help="Write narrative markdown")
+def diff(
+    repo: str | None,
+    from_ref: str | None,
+    to_ref: str | None,
+    narrative: bool,
+    output: str | None,
+):
     """Compare two snapshots (or commits)."""
     root = _repo_path(repo)
     store = _store(root)
@@ -123,6 +135,20 @@ def diff(repo: str | None, from_ref: str | None, to_ref: str | None):
         console.print(f"  [red]-[/red] {el.name} ({el.stereotype})")
     for ch in result.modified_elements[:10]:
         console.print(f"  [yellow]~[/yellow] {ch.element.name}: {ch.diff_summary}")
+
+    if narrative or output:
+        from archlens.analysis.narrative_diff import narrative_diff
+
+        narr = narrative_diff(from_snap, to_snap, diff=result)
+        console.print("")
+        console.print(narr["narrative"])
+        if output:
+            out = Path(output)
+            if not out.is_absolute():
+                out = root / out
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(narr["markdown"], encoding="utf-8")
+            console.print(f"[green]Narrative written to[/green] {out}")
 
 
 @cli.command()
@@ -507,6 +533,155 @@ def cdm_cmd(repo: str | None, output: str, json_output: str | None):
         jout.parent.mkdir(parents=True, exist_ok=True)
         jout.write_text(json.dumps(cdm.to_dict(), indent=2), encoding="utf-8")
         console.print(f"[green]CDM JSON written to[/green] {jout}")
+
+
+@cli.command("schema-drift")
+@click.option("--repo", default=None)
+@click.option("--output", default="docs/SCHEMA_CDM_DRIFT.md")
+@click.option("--fail-on-drift", is_flag=True, default=False)
+def schema_drift_cmd(repo: str | None, output: str, fail_on_drift: bool):
+    """Compare inferred CDM against Flyway/Liquibase/DDL schema files."""
+    from archlens.analysis.schema_drift import analyze_schema_drift
+
+    root = _repo_path(repo)
+    cfg = load_config(root)
+    snapshot = _store(root).get_latest_snapshot()
+    if not snapshot:
+        console.print("[red]No snapshot. Run archlens scan first.[/red]")
+        sys.exit(1)
+    report = analyze_schema_drift(snapshot, root, globs=cfg.ddl.globs)
+    out = Path(output)
+    if not out.is_absolute():
+        out = root / out
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(report.to_markdown(), encoding="utf-8")
+    console.print(f"[green]Schema drift report[/green] {out}")
+    console.print(
+        f"  schema_tables={report.stats.get('schema_table_count')} "
+        f"only_schema={len(report.only_in_schema)} "
+        f"only_cdm={len(report.only_in_cdm)} "
+        f"col_mismatches={len(report.column_mismatches)}"
+    )
+    if (fail_on_drift or cfg.ddl.fail_on_drift) and report.has_drift:
+        sys.exit(2)
+
+
+@cli.command("intents")
+@click.option("--repo", default=None)
+@click.option("--validate/--no-validate", default=True)
+@click.option("--init-file", is_flag=True, help="Create example .archlens/intents.yaml")
+def intents_cmd(repo: str | None, validate: bool, init_file: bool):
+    """Show / validate human architecture intent overlays."""
+    from archlens.analysis.intents import load_intents, validate_intents, write_example_intents
+
+    root = _repo_path(repo)
+    if init_file:
+        path = write_example_intents(root)
+        console.print(f"[green]Wrote[/green] {path}")
+        return
+    intents = load_intents(root)
+    console.print(
+        f"Intents: overrides={len(intents.stereotype_overrides)} "
+        f"owners={len(intents.owners)} "
+        f"forbidden={len(intents.forbidden_edges)} "
+        f"critical_paths={len(intents.critical_paths)} "
+        f"boundaries={len(intents.boundaries)}"
+    )
+    if validate:
+        snap = _store(root).get_latest_snapshot()
+        if not snap:
+            console.print("[yellow]No snapshot — skip validation.[/yellow]")
+            return
+        result = validate_intents(snap, intents=intents)
+        if result["ok"]:
+            console.print("[green]Intent validation OK[/green]")
+        else:
+            console.print(f"[red]Violations:[/red] {result['violation_count']}")
+            for v in result["violations"][:20]:
+                console.print(f"  - {v}")
+            if result["missing_critical_paths"]:
+                console.print(f"  missing critical: {result['missing_critical_paths']}")
+            sys.exit(2)
+
+
+@cli.command("traces")
+@click.option("--repo", default=None)
+@click.option("--output", default="docs/PROCESS_TRACES.md")
+def traces_cmd(repo: str | None, output: str):
+    """Build behavioral process traces (API→data, CICS chains)."""
+    from archlens.analysis.process_traces import build_process_traces
+
+    root = _repo_path(repo)
+    snapshot = _store(root).get_latest_snapshot()
+    if not snapshot:
+        console.print("[red]No snapshot. Run archlens scan first.[/red]")
+        sys.exit(1)
+    report = build_process_traces(snapshot)
+    out = Path(output)
+    if not out.is_absolute():
+        out = root / out
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(report.to_markdown(), encoding="utf-8")
+    console.print(f"[green]Traces written to[/green] {out}")
+    console.print(f"  traces={report.stats.get('trace_count')} kinds={report.stats.get('kinds')}")
+
+
+@cli.command("domains")
+@click.option("--repo", default=None)
+@click.option("--output", default="docs/DOMAINS.md")
+def domains_cmd(repo: str | None, output: str):
+    """Slice the architecture into domain / bounded-context clusters."""
+    from archlens.analysis.domains import slice_domains
+
+    root = _repo_path(repo)
+    snapshot = _store(root).get_latest_snapshot()
+    if not snapshot:
+        console.print("[red]No snapshot. Run archlens scan first.[/red]")
+        sys.exit(1)
+    report = slice_domains(snapshot)
+    out = Path(output)
+    if not out.is_absolute():
+        out = root / out
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(report.to_markdown(), encoding="utf-8")
+    console.print(f"[green]Domains written to[/green] {out}")
+    console.print(
+        f"  domains={report.stats.get('domain_count')} "
+        f"unassigned={report.stats.get('unassigned_count')}"
+    )
+
+
+@cli.command("timeline")
+@click.option("--repo", default=None)
+@click.option("--from", "from_ref", default=None)
+@click.option("--to", "to_ref", default=None)
+@click.option("--output", default="docs/ARCHITECTURE_TIMELINE.md")
+def timeline_cmd(repo: str | None, from_ref: str | None, to_ref: str | None, output: str):
+    """Narrative time-travel diff between two snapshots."""
+    from archlens.analysis.narrative_diff import narrative_diff
+
+    root = _repo_path(repo)
+    store = _store(root)
+    to_snap = _resolve_snapshot(store, to_ref) if to_ref else store.get_latest_snapshot()
+    if not to_snap:
+        console.print("[red]No snapshot. Run archlens scan first.[/red]")
+        sys.exit(1)
+    if from_ref:
+        from_snap = _resolve_snapshot(store, from_ref)
+    else:
+        snaps = store.list_snapshots(limit=2)
+        from_snap = store.get_snapshot(snaps[1]["id"]) if len(snaps) >= 2 else None
+    if not from_snap:
+        console.print("[red]Need a prior snapshot (--from) for timeline.[/red]")
+        sys.exit(1)
+    narr = narrative_diff(from_snap, to_snap)
+    out = Path(output)
+    if not out.is_absolute():
+        out = root / out
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(narr["markdown"], encoding="utf-8")
+    console.print(narr["narrative"])
+    console.print(f"[green]Timeline written to[/green] {out}")
 
 
 @cli.command("health")

@@ -63,6 +63,23 @@ class ImpactConfig(BaseModel):
     )
 
 
+class SchemaConfig(BaseModel):
+    """DDL / migration paths for CDM triangulation."""
+
+    globs: list[str] = Field(
+        default_factory=lambda: [
+            "**/db/migration/**/*.sql",
+            "**/db/migrations/**/*.sql",
+            "**/flyway/**/*.sql",
+            "**/liquibase/**/*.{sql,yaml,yml,xml}",
+            "**/changelog/**/*.{sql,yaml,yml,xml}",
+            "**/schema/**/*.sql",
+            "**/ddl/**/*.sql",
+        ]
+    )
+    fail_on_drift: bool = False
+
+
 class MainframeStereotypeOverride(BaseModel):
     program: str | None = None
     program_pattern: str | None = None  # glob, e.g. "DB*"
@@ -93,7 +110,9 @@ class ArchLensConfig(BaseModel):
     exclude: list[str] = Field(default_factory=lambda: list(DEFAULT_EXCLUDE))
     diagrams: DiagramConfig = Field(default_factory=DiagramConfig)
     impact: ImpactConfig = Field(default_factory=ImpactConfig)
+    ddl: SchemaConfig = Field(default_factory=SchemaConfig)
     mainframe: MainframeConfig = Field(default_factory=MainframeConfig)
+    intents_path: str | None = None  # override; default .archlens/intents.yaml
 
     def custom_stereotype_for(self, language: str, annotation: str) -> str | None:
         mappings = self.stereotypes.get(language, [])
@@ -221,6 +240,17 @@ impact:
   critical_stereotypes:
     - "Controller"
     - "Gateway"
+
+# Schema / DDL triangulation (CDM vs Flyway/Liquibase/SQL)
+ddl:
+  globs:
+    - "**/db/migration/**/*.sql"
+    - "**/db/migrations/**/*.sql"
+    - "**/flyway/**/*.sql"
+    - "**/schema/**/*.sql"
+  fail_on_drift: false
+
+# Human overlays live in .archlens/intents.yaml (owners, forbidden edges, domains)
 """
 
 
@@ -245,6 +275,9 @@ def load_config(repo_path: Path | str) -> ArchLensConfig:
     data["stereotypes"] = stereotypes
     containers_raw = data.get("containers") or []
     data["containers"] = containers_raw
+    # Accept legacy `schema:` key as alias for `ddl:`
+    if "ddl" not in data and "schema" in data:
+        data["ddl"] = data.pop("schema")
     return ArchLensConfig.model_validate(data)
 
 

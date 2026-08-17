@@ -30,6 +30,23 @@ QUERY_PATTERNS: list[dict[str, Any]] = [
     },
     {
         "patterns": [
+            r"where is (\w+)",
+            r"find file (?:for )?(\w+)",
+            r"cite (\w+)",
+        ],
+        "mode": "cite",
+        "description": "element citation",
+    },
+    {
+        "patterns": [
+            r"(?:show|trace|path).{0,20}(?:from )?(\w+).{0,20}(?:to|→|->).{0,10}(\w+)",
+            r"how does (\w+) (?:reach|get to) (\w+)",
+        ],
+        "mode": "path",
+        "description": "path between elements",
+    },
+    {
+        "patterns": [
             r"(?:show|list|find) (?:all )?([\w ]+?)s?(?:\s|$)",
             r"how many ([\w ]+?)s?\b",
         ],
@@ -92,7 +109,40 @@ def run_nl_query(snapshot: ArchSnapshot, nl_query: str) -> dict[str, Any]:
                 continue
             mode = pattern_def["mode"]
             if mode == "group_stereotype":
-                return _group_by_stereotype(snapshot, pattern_def["description"], "tier1")
+                return _with_citations(
+                    _group_by_stereotype(snapshot, pattern_def["description"], "tier1")
+                )
+            if mode == "cite":
+                element = match.group(1)
+                results = [
+                    _el_dict(e)
+                    for e in snapshot.elements
+                    if e.name.lower() == element.lower() or element.lower() in e.id.lower()
+                ]
+                return _with_citations(
+                    {
+                        "tier": "tier1",
+                        "query_type": pattern_def["description"],
+                        "matched_pattern": pattern,
+                        "element": element,
+                        "result_count": len(results),
+                        "results": results,
+                    }
+                )
+            if mode == "path":
+                a, b = match.group(1), match.group(2)
+                results = _path_between(snapshot, a, b)
+                return _with_citations(
+                    {
+                        "tier": "tier1",
+                        "query_type": pattern_def["description"],
+                        "matched_pattern": pattern,
+                        "from": a,
+                        "to": b,
+                        "result_count": len(results),
+                        "results": results,
+                    }
+                )
             if mode == "stereotype":
                 token = match.group(1).strip()
                 stereo = _normalize_stereotype(token)
@@ -103,27 +153,31 @@ def run_nl_query(snapshot: ArchSnapshot, nl_query: str) -> dict[str, Any]:
                         for e in snapshot.elements
                         if e.stereotype.lower() == stereo.lower()
                     ]
-                    return {
-                        "tier": "tier1",
-                        "query_type": pattern_def["description"],
-                        "matched_pattern": pattern,
-                        "stereotype": stereo,
-                        "result_count": len(results),
-                        "results": results,
-                    }
+                    return _with_citations(
+                        {
+                            "tier": "tier1",
+                            "query_type": pattern_def["description"],
+                            "matched_pattern": pattern,
+                            "stereotype": stereo,
+                            "result_count": len(results),
+                            "results": results,
+                        }
+                    )
                 continue
             if mode in ("upstream", "downstream"):
                 element = match.group(1)
                 results = _deps(snapshot, element, mode)
-                return {
-                    "tier": "tier1",
-                    "query_type": pattern_def["description"],
-                    "matched_pattern": pattern,
-                    "element": element,
-                    "direction": mode,
-                    "result_count": len(results),
-                    "results": results,
-                }
+                return _with_citations(
+                    {
+                        "tier": "tier1",
+                        "query_type": pattern_def["description"],
+                        "matched_pattern": pattern,
+                        "element": element,
+                        "direction": mode,
+                        "result_count": len(results),
+                        "results": results,
+                    }
+                )
 
     entities = _extract_entities(snapshot, q)
     if entities:
@@ -141,13 +195,15 @@ def run_nl_query(snapshot: ArchSnapshot, nl_query: str) -> dict[str, Any]:
                 if key not in seen:
                     seen.add(key)
                     unique.append(r)
-            return {
-                "tier": "tier2",
-                "query_type": "entity dependency lookup",
-                "entities": entities,
-                "result_count": len(unique),
-                "results": unique,
-            }
+            return _with_citations(
+                {
+                    "tier": "tier2",
+                    "query_type": "entity dependency lookup",
+                    "entities": entities,
+                    "result_count": len(unique),
+                    "results": unique,
+                }
+            )
 
         matched = [
             _el_dict(e)
@@ -155,13 +211,15 @@ def run_nl_query(snapshot: ArchSnapshot, nl_query: str) -> dict[str, Any]:
             if e.name.lower() in {x.lower() for x in entities}
             or any(x.lower() in e.id.lower() for x in entities)
         ]
-        return {
-            "tier": "tier2",
-            "query_type": "entity name match",
-            "entities": entities,
-            "result_count": len(matched),
-            "results": matched,
-        }
+        return _with_citations(
+            {
+                "tier": "tier2",
+                "query_type": "entity name match",
+                "entities": entities,
+                "result_count": len(matched),
+                "results": matched,
+            }
+        )
 
     return {
         "tier": "tier3",
@@ -169,7 +227,8 @@ def run_nl_query(snapshot: ArchSnapshot, nl_query: str) -> dict[str, Any]:
         "error": "Could not parse query with pattern/entity matching. Use SQL or structured filters.",
         "hint": (
             "Try: stereotype filter, element+direction, or phrases like "
-            "'what depends on UserService', 'list all controllers'."
+            "'what depends on UserService', 'where is UserService', "
+            "'list all controllers'."
         ),
         "available_tables": ["elements", "relationships", "snapshots", "change_history"],
         "snapshot_id": snapshot.snapshot_id,
@@ -180,6 +239,7 @@ def run_nl_query(snapshot: ArchSnapshot, nl_query: str) -> dict[str, Any]:
         "sample_elements": [_el_dict(e) for e in snapshot.elements[:10]],
         "result_count": 0,
         "results": [],
+        "citations": [],
     }
 
 
@@ -196,29 +256,33 @@ def structured_query(
     if query and not stereotype and not element and not group_by:
         return run_nl_query(snapshot, query)
     if group_by in ("stereotype", "layer"):
-        return _group_by_stereotype(snapshot, "stereotype counts", "structured")
+        return _with_citations(_group_by_stereotype(snapshot, "stereotype counts", "structured"))
     if stereotype:
         results = [
             _el_dict(e)
             for e in snapshot.elements
             if e.stereotype.lower() == stereotype.lower()
         ]
-        return {
-            "tier": "structured",
-            "query_type": "stereotype filter",
-            "result_count": len(results),
-            "results": results,
-        }
+        return _with_citations(
+            {
+                "tier": "structured",
+                "query_type": "stereotype filter",
+                "result_count": len(results),
+                "results": results,
+            }
+        )
     if element:
         results = _deps(snapshot, element, direction)
-        return {
-            "tier": "structured",
-            "query_type": f"{direction} dependencies",
-            "element": element,
-            "result_count": len(results),
-            "results": results,
-        }
-    return _all_elements(snapshot, "all elements")
+        return _with_citations(
+            {
+                "tier": "structured",
+                "query_type": f"{direction} dependencies",
+                "element": element,
+                "result_count": len(results),
+                "results": results,
+            }
+        )
+    return _with_citations(_all_elements(snapshot, "all elements"))
 
 
 def _normalize_stereotype(token: str) -> str | None:
@@ -267,6 +331,57 @@ def _deps(snapshot: ArchSnapshot, element: str, direction: str) -> list[dict[str
     return results
 
 
+def _path_between(snapshot: ArchSnapshot, a: str, b: str, max_depth: int = 6) -> list[dict[str, Any]]:
+    """Shortest dependency path A → … → B (downstream)."""
+    by_id = {e.id: e for e in snapshot.elements}
+    starts = [
+        e.id
+        for e in snapshot.elements
+        if e.name.lower() == a.lower() or a.lower() in e.id.lower()
+    ]
+    goals = {
+        e.id
+        for e in snapshot.elements
+        if e.name.lower() == b.lower() or b.lower() in e.id.lower()
+    }
+    if not starts or not goals:
+        return []
+    outgoing: dict[str, list[str]] = {}
+    for r in snapshot.relationships:
+        outgoing.setdefault(r.source_id, []).append(r.target_id)
+
+    from collections import deque
+
+    for start in starts:
+        queue: deque[tuple[str, list[str]]] = deque([(start, [start])])
+        seen = {start}
+        while queue:
+            cur, path = queue.popleft()
+            if cur in goals and len(path) > 1:
+                names = [by_id[i].name for i in path if i in by_id]
+                return [
+                    {
+                        "path": names,
+                        "hops": len(names) - 1,
+                        "citation": " → ".join(
+                            f"{by_id[i].file_path}#{by_id[i].name}" for i in path if i in by_id
+                        ),
+                        "name": " → ".join(names),
+                        "stereotype": "path",
+                        "file_path": by_id[path[0]].file_path if path[0] in by_id else "",
+                        "id": path[0],
+                    }
+                ]
+            if len(path) > max_depth:
+                continue
+            for nxt in outgoing.get(cur, []):
+                if nxt in seen:
+                    continue
+                seen.add(nxt)
+                queue.append((nxt, path + [nxt]))
+    return []
+
+
 def _group_by_stereotype(snapshot: ArchSnapshot, query_type: str, tier: str) -> dict[str, Any]:
     counts: dict[str, int] = {}
     for e in snapshot.elements:
@@ -300,4 +415,22 @@ def _el_dict(e) -> dict[str, Any]:
         "language": e.language,
         "file_path": e.file_path,
         "id": e.id,
+        "citation": f"{e.file_path}#{e.name}",
     }
+
+
+def _with_citations(payload: dict[str, Any]) -> dict[str, Any]:
+    """Ensure results carry file citations for agent grounding."""
+    results = payload.get("results") or []
+    citations: list[str] = []
+    for r in results:
+        if isinstance(r, dict):
+            cite = r.get("citation") or (
+                f"{r.get('file_path', '?')}#{r.get('name', '?')}" if r.get("file_path") else None
+            )
+            if cite:
+                r.setdefault("citation", cite)
+                citations.append(cite)
+    if citations:
+        payload["citations"] = citations[:40]
+    return payload

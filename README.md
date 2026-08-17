@@ -10,10 +10,14 @@ ArchLens treats architecture as **data extracted from code** using tree-sitter A
 - **Mainframe extraction** — COBOL programs (CALL, EXEC CICS, EXEC SQL, COPY), JCL jobs/steps/datasets, behavioral stereotypes (UI / Service / Repository / Batch Job / Shared Data)
 - **SQLite snapshots** — versioned architecture models stored in `.archlens/`
 - **Canonical data model (CDM)** — tables, columns, and FK associations from Java (JPA/`I_*`), TypeScript (TypeORM), Python (SQLAlchemy/dataclass/Pydantic), and COBOL (DB2/DCLGEN) via `archlens cdm`; basic data-model inventory is also included in `archlens report`
+- **Schema ↔ CDM drift** — triangulate inferred entities against Flyway/Liquibase/DDL (`archlens schema-drift`)
+- **Intent overlays** — versioned `.archlens/intents.yaml` for owners, forbidden edges, critical paths, domain boundaries
+- **Process traces & domains** — API→data / CICS behavioral traces and bounded-context slicing
+- **Timeline narratives** — human-readable architectural change stories between snapshots
 - **Drift detection** — compare current code against the last snapshot
-- **Impact analysis** — blast radius of file or component changes
+- **Impact analysis** — blast radius of file or component changes with graph-grounded suggestions
 - **Mermaid / Structurizr diagrams** — C4 context, container, and component views
-- **CI-ready** — platform-agnostic check script + GitHub Actions / GitLab CI examples
+- **CI freshness** — scan + CDM + schema drift + impact artifacts on every PR (`ci/archlens-check.sh`)
 - **MCP server** (optional) — tools for Claude, Copilot, Cursor, and other assistants
 
 ## Install
@@ -32,6 +36,10 @@ archlens scan
 archlens diagram --format mermaid --level component
 archlens report --output docs/ARCHITECTURE.md
 archlens cdm --output docs/CANONICAL_DATA_MODEL.md
+archlens schema-drift --output docs/SCHEMA_CDM_DRIFT.md
+archlens traces --output docs/PROCESS_TRACES.md
+archlens domains --output docs/DOMAINS.md
+archlens timeline --output docs/ARCHITECTURE_TIMELINE.md
 archlens impact --files path/to/changed/file.py
 archlens drift --fail-on-change
 ```
@@ -55,7 +63,7 @@ archlens mcp                       # stdio MCP server (default for editors)
 | VS Code | `.vscode/settings.json`, `.vscode/mcp.json` | VS Code MCP hosts |
 | Antigravity | `.agents/skills/archlens/SKILL.md`, plugin under `archlens-plugin/` | MCP + skills |
 
-MCP tools: `archlens_scan`, `archlens_query`, `archlens_impact`, `archlens_drift`, `archlens_diagram`, `archlens_report`, `archlens_cdm`, `archlens_health`, …
+MCP tools: `archlens_scan`, `archlens_query`, `archlens_impact`, `archlens_drift`, `archlens_diagram`, `archlens_report`, `archlens_cdm`, `archlens_schema_drift`, `archlens_intents`, `archlens_traces`, `archlens_domains`, `archlens_timeline`, `archlens_health`, …
 
 Interactive agent (CLI fallback if Antigravity SDK is absent):
 
@@ -84,6 +92,11 @@ archlens agent --repo . --cli
 | `archlens contracts` | Link services via OpenAPI + HTTP call sites |
 | `archlens health` | Score coupling, cycles, layer violations |
 | `archlens cdm` | Generate CDM (tables/columns/FKs) + basic data-model inventory |
+| `archlens schema-drift` | Compare CDM vs Flyway/Liquibase/DDL |
+| `archlens intents` | Validate `.archlens/intents.yaml` overlays |
+| `archlens traces` | Behavioral API→data / CICS process traces |
+| `archlens domains` | Domain / bounded-context slices |
+| `archlens timeline` | Narrative time-travel diff between snapshots |
 | `archlens federate` | Fetch remote architecture JSON / HTTP export |
 
 ## Phase 3 (distributed)

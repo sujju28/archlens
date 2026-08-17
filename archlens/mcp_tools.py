@@ -220,6 +220,78 @@ def tool_cdm(repo_path: str, output_path: str | None = None) -> str:
     )
 
 
+def tool_schema_drift(repo_path: str, output_path: str | None = None) -> str:
+    from archlens.analysis.schema_drift import analyze_schema_drift
+    from archlens.config import load_config
+    from archlens.storage.sqlite_store import SQLiteStore, default_db_path
+
+    snap = SQLiteStore(default_db_path(repo_path)).get_latest_snapshot()
+    if not snap:
+        return json.dumps({"error": "No snapshot. Run archlens_scan first."})
+    cfg = load_config(repo_path)
+    report = analyze_schema_drift(snap, repo_path, globs=cfg.ddl.globs)
+    if output_path:
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(report.to_markdown(), encoding="utf-8")
+    return json.dumps(report.to_dict(), indent=2)
+
+
+def tool_intents(repo_path: str, validate: bool = True) -> str:
+    from archlens.analysis.intents import load_intents, validate_intents
+    from archlens.storage.sqlite_store import SQLiteStore, default_db_path
+
+    intents = load_intents(repo_path)
+    payload: dict[str, Any] = intents.model_dump()
+    if validate:
+        snap = SQLiteStore(default_db_path(repo_path)).get_latest_snapshot()
+        if snap:
+            payload["validation"] = validate_intents(snap, intents=intents)
+    return json.dumps(payload, indent=2)
+
+
+def tool_traces(repo_path: str) -> str:
+    from archlens.analysis.process_traces import build_process_traces
+    from archlens.storage.sqlite_store import SQLiteStore, default_db_path
+
+    snap = SQLiteStore(default_db_path(repo_path)).get_latest_snapshot()
+    if not snap:
+        return json.dumps({"error": "No snapshot. Run archlens_scan first."})
+    return json.dumps(build_process_traces(snap).to_dict(), indent=2)
+
+
+def tool_domains(repo_path: str) -> str:
+    from archlens.analysis.domains import slice_domains
+    from archlens.storage.sqlite_store import SQLiteStore, default_db_path
+
+    snap = SQLiteStore(default_db_path(repo_path)).get_latest_snapshot()
+    if not snap:
+        return json.dumps({"error": "No snapshot. Run archlens_scan first."})
+    return json.dumps(slice_domains(snap).to_dict(), indent=2)
+
+
+def tool_timeline(
+    repo_path: str, from_ref: str | None = None, to_ref: str | None = None
+) -> str:
+    from archlens.analysis.narrative_diff import narrative_diff
+    from archlens.storage.sqlite_store import SQLiteStore, default_db_path
+
+    store = SQLiteStore(default_db_path(repo_path))
+    to_snap = store.get_snapshot(to_ref) if to_ref else store.get_latest_snapshot()
+    if to_ref and not to_snap:
+        to_snap = store.get_snapshot_by_commit(to_ref)
+    if not to_snap:
+        return json.dumps({"error": "No snapshot. Run archlens_scan first."})
+    if from_ref:
+        from_snap = store.get_snapshot(from_ref) or store.get_snapshot_by_commit(from_ref)
+    else:
+        snaps = store.list_snapshots(limit=2)
+        from_snap = store.get_snapshot(snaps[1]["id"]) if len(snaps) >= 2 else None
+    if not from_snap:
+        return json.dumps({"error": "Need a prior snapshot for timeline."})
+    return json.dumps(narrative_diff(from_snap, to_snap), indent=2)
+
+
 def tool_federate(url: str) -> str:
     from archlens.distributed.federation import fetch_remote_architecture
 
@@ -248,5 +320,10 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {"name": "archlens_contracts", "description": "Link services via OpenAPI specs and HTTP call sites."},
     {"name": "archlens_health", "description": "Score architecture health (cycles, coupling, layer violations)."},
     {"name": "archlens_cdm", "description": "Generate a canonical data model from Entity/PO/JPA types."},
+    {"name": "archlens_schema_drift", "description": "Compare CDM vs Flyway/Liquibase/DDL schema."},
+    {"name": "archlens_intents", "description": "Load/validate human architecture intent overlays."},
+    {"name": "archlens_traces", "description": "Build API→data and CICS process traces."},
+    {"name": "archlens_domains", "description": "Slice architecture into domain/bounded contexts."},
+    {"name": "archlens_timeline", "description": "Narrative time-travel diff between snapshots."},
     {"name": "archlens_federate", "description": "Fetch architecture JSON from a remote ArchLens/HTTP URL."},
 ]

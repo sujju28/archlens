@@ -158,19 +158,83 @@ class ImpactAnalyzer:
         return "LOW"
 
     def _suggest(self, changed_ids: list[str], by_id: dict, direct: list[AffectedElement]) -> list[str]:
-        suggestions = []
+        suggestions: list[str] = []
+        critical = set(self.config.impact.critical_stereotypes)
+
         for cid in changed_ids:
             el = by_id.get(cid)
             if not el:
                 continue
-            dependents = [d for d in direct if el.name in d.reason]
+            dependents = [d for d in direct if el.name in d.reason or d.reason.endswith(el.name)]
+            if not dependents:
+                dependents = [d for d in direct if el.id in d.reason or el.name in d.reason]
+
+            containers = sorted(
+                {
+                    str((by_id.get(d.id).metadata or {}).get("container"))
+                    for d in dependents
+                    if by_id.get(d.id) and (by_id[d.id].metadata or {}).get("container")
+                }
+            )
+            owners = sorted(
+                {
+                    str((by_id.get(d.id).metadata or {}).get("owner"))
+                    for d in dependents
+                    if by_id.get(d.id) and (by_id[d.id].metadata or {}).get("owner")
+                }
+            )
+
             if dependents:
-                names = ", ".join(d.name for d in dependents[:5])
+                names = ", ".join(f"`{d.name}` ({d.stereotype})" for d in dependents[:6])
                 suggestions.append(
-                    f"If you changed `{el.name}`, you likely need to update: {names}"
+                    f"Blast radius of `{el.name}` ({el.stereotype}): update {names}"
+                )
+            if containers:
+                suggestions.append(
+                    f"Notify containers impacted by `{el.name}`: "
+                    + ", ".join(f"`{c}`" for c in containers[:6])
+                )
+            if owners:
+                suggestions.append(
+                    f"Owners to loop in for `{el.name}`: " + ", ".join(owners[:6])
+                )
+
+            high = [d for d in dependents if d.stereotype in critical or d.risk == "HIGH"]
+            if high:
+                suggestions.append(
+                    f"High-risk entry points depending on `{el.name}`: "
+                    + ", ".join(f"`{d.name}`" for d in high[:5])
+                    + " — verify contracts/tests before merge"
+                )
+
+            if el.stereotype == "Entity":
+                suggestions.append(
+                    f"Entity `{el.name}` changed — check migrations/DDL and "
+                    f"repository mappings; run `archlens schema-drift`"
                 )
             if el.stereotype == "Service":
                 suggestions.append(
-                    f"Update unit/integration tests covering `{el.name}`"
+                    f"Update unit/integration tests covering `{el.name}` "
+                    f"(`{el.file_path}`)"
                 )
-        return suggestions
+            if el.stereotype in ("Controller", "Gateway"):
+                suggestions.append(
+                    f"API surface `{el.name}` changed — review OpenAPI/clients "
+                    f"and run `archlens contracts` if multi-repo"
+                )
+            if (el.metadata or {}).get("critical_paths"):
+                paths = ", ".join(
+                    f"`{p}`" for p in (el.metadata or {}).get("critical_paths", [])[:4]
+                )
+                suggestions.append(
+                    f"`{el.name}` is on critical path(s) {paths} — treat as release-risk"
+                )
+
+        # De-dupe while preserving order
+        seen: set[str] = set()
+        uniq: list[str] = []
+        for s in suggestions:
+            if s not in seen:
+                seen.add(s)
+                uniq.append(s)
+        return uniq

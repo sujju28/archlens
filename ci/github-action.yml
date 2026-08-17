@@ -16,20 +16,39 @@ jobs:
       - name: Install ArchLens
         run: pip install .
 
-      - name: Scan
+      - name: Freshness scan + reports
+        env:
+          ARCHLENS_FAIL_ON_DRIFT: ${{ vars.ARCHLENS_FAIL_ON_DRIFT || '0' }}
+          ARCHLENS_FAIL_ON_SCHEMA_DRIFT: ${{ vars.ARCHLENS_FAIL_ON_SCHEMA_DRIFT || '0' }}
+          ARCHLENS_BASE_REF: origin/${{ github.base_ref }}
         run: |
-          archlens init
-          archlens scan --commit ${{ github.sha }}
+          chmod +x ci/archlens-check.sh
+          ./ci/archlens-check.sh .
 
-      - name: Impact analysis
+      - name: PR summary
+        if: always()
         run: |
-          FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD || true)
-          if [ -n "$FILES" ]; then
-            archlens impact --files $FILES --output impact_report.md
-          fi
-
-      - name: Report
-        run: archlens report --output docs/ARCHITECTURE.md
+          {
+            echo "## ArchLens"
+            echo ""
+            if [ -f impact_report.md ]; then
+              echo "### Impact"
+              echo ""
+              head -n 40 impact_report.md
+              echo ""
+            fi
+            if [ -f docs/SCHEMA_CDM_DRIFT.md ]; then
+              echo "### Schema ↔ CDM"
+              echo ""
+              head -n 30 docs/SCHEMA_CDM_DRIFT.md
+              echo ""
+            fi
+            if [ -f docs/ARCHITECTURE_TIMELINE.md ]; then
+              echo "### Timeline"
+              echo ""
+              head -n 25 docs/ARCHITECTURE_TIMELINE.md
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -37,4 +56,9 @@ jobs:
           path: |
             impact_report.md
             docs/ARCHITECTURE.md
+            docs/CANONICAL_DATA_MODEL.md
+            docs/SCHEMA_CDM_DRIFT.md
+            docs/PROCESS_TRACES.md
+            docs/DOMAINS.md
+            docs/ARCHITECTURE_TIMELINE.md
           if-no-files-found: ignore

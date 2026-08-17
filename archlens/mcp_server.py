@@ -16,14 +16,19 @@ from archlens.mcp_tools import (
     tool_cdm,
     tool_contracts,
     tool_diagram,
+    tool_domains,
     tool_drift,
     tool_events,
     tool_federate,
     tool_health,
     tool_impact,
+    tool_intents,
     tool_query,
     tool_report,
     tool_scan,
+    tool_schema_drift,
+    tool_timeline,
+    tool_traces,
 )
 
 
@@ -119,6 +124,33 @@ def run_mcp(transport: str = "stdio", port: int = 8080) -> None:
     def archlens_cdm(repo_path: str, output_path: str | None = None) -> str:
         """Generate a canonical data model (CDM) from Entity/PO/JPA types."""
         return tool_cdm(repo_path, output_path=output_path)
+
+    @mcp.tool(name="archlens_schema_drift")
+    def archlens_schema_drift(repo_path: str, output_path: str | None = None) -> str:
+        """Compare inferred CDM against Flyway/Liquibase/DDL schema files."""
+        return tool_schema_drift(repo_path, output_path=output_path)
+
+    @mcp.tool(name="archlens_intents")
+    def archlens_intents(repo_path: str, validate: bool = True) -> str:
+        """Load and validate human architecture intent overlays."""
+        return tool_intents(repo_path, validate=validate)
+
+    @mcp.tool(name="archlens_traces")
+    def archlens_traces(repo_path: str) -> str:
+        """Build behavioral process traces (API→data, CICS chains)."""
+        return tool_traces(repo_path)
+
+    @mcp.tool(name="archlens_domains")
+    def archlens_domains(repo_path: str) -> str:
+        """Slice architecture into domain / bounded-context clusters."""
+        return tool_domains(repo_path)
+
+    @mcp.tool(name="archlens_timeline")
+    def archlens_timeline(
+        repo_path: str, from_ref: str | None = None, to_ref: str | None = None
+    ) -> str:
+        """Narrative time-travel diff between two snapshots."""
+        return tool_timeline(repo_path, from_ref=from_ref, to_ref=to_ref)
 
     @mcp.tool(name="archlens_federate")
     def archlens_federate(url: str) -> str:

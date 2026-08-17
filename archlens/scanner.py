@@ -150,6 +150,15 @@ def scan_repository(
             ],
         },
     )
+
+    # Human intent overlays (stereotype/owners/domains/critical paths)
+    from archlens.analysis.intents import apply_intents, intent_relationships, load_intents
+
+    intents = load_intents(repo)
+    apply_intents(snapshot, intents=intents)
+    for rel in intent_relationships(intents, snapshot):
+        snapshot.relationships.append(rel)
+
     if persist:
         store = store or SQLiteStore(default_db_path(repo))
         store.save_snapshot(snapshot)

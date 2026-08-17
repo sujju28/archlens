@@ -2,20 +2,19 @@
 archlens:
   image: python:3.12
   stage: test
+  variables:
+    ARCHLENS_BASE_REF: "origin/${CI_DEFAULT_BRANCH}"
   script:
     - pip install .
-    - archlens init
-    - archlens scan --commit "$CI_COMMIT_SHA"
-    - |
-      if [ -n "${CI_MERGE_REQUEST_DIFF_BASE_SHA:-}" ]; then
-        FILES=$(git diff --name-only "$CI_MERGE_REQUEST_DIFF_BASE_SHA"...HEAD || true)
-        if [ -n "$FILES" ]; then
-          archlens impact --files $FILES --output impact_report.md
-        fi
-      fi
-    - archlens report --output docs/ARCHITECTURE.md
+    - chmod +x ci/archlens-check.sh
+    - ./ci/archlens-check.sh .
   artifacts:
     paths:
       - impact_report.md
       - docs/ARCHITECTURE.md
+      - docs/CANONICAL_DATA_MODEL.md
+      - docs/SCHEMA_CDM_DRIFT.md
+      - docs/PROCESS_TRACES.md
+      - docs/DOMAINS.md
+      - docs/ARCHITECTURE_TIMELINE.md
     when: always

@@ -14,6 +14,7 @@ from archlens.extractors.base import (
     PYTHON_STEREOTYPE_MAP,
     BaseExtractor,
 )
+from archlens.extractors.entity_metadata import parse_entity_metadata
 from archlens.models import ArchElement, ArchRelationship, RelType
 
 
@@ -143,6 +144,31 @@ class PythonExtractor(BaseExtractor):
                     implements=extends[1:] if len(extends) > 1 else [],
                     builtin_map=PYTHON_STEREOTYPE_MAP,
                 )
+                class_text = source[node.start_byte : node.end_byte].decode(
+                    "utf-8", errors="replace"
+                )
+                metadata: dict = {}
+                if (
+                    stereotype == "Entity"
+                    or "dataclass" in decorators
+                    or any("BaseModel" in d for d in decorators)
+                    or "__tablename__" in class_text
+                    or name.endswith(("Entity", "Model"))
+                ):
+                    # SQLAlchemy / dataclass / pydantic → Entity for data model
+                    if stereotype in ("Component", "Unknown", "Entity") or name.endswith(
+                        ("Entity", "Model")
+                    ):
+                        if "__tablename__" in class_text or "Column(" in class_text:
+                            stereotype = "Entity"
+                        elif "dataclass" in decorators or any(
+                            "BaseModel" in d for d in decorators
+                        ):
+                            stereotype = "Entity"
+                    if stereotype == "Entity":
+                        metadata = parse_entity_metadata(
+                            name, class_text, decorators, language="python"
+                        )
                 elements.append(
                     ArchElement(
                         id=self.make_id(name, file_path),
@@ -155,6 +181,7 @@ class PythonExtractor(BaseExtractor):
                         annotations=decorators,
                         extends=extends[0] if extends else None,
                         implements=extends[1:] if len(extends) > 1 else [],
+                        metadata=metadata,
                     )
                 )
             elif node.type == "decorated_definition":
@@ -237,6 +264,29 @@ class PythonExtractor(BaseExtractor):
                     implements=bases[1:],
                     builtin_map=PYTHON_STEREOTYPE_MAP,
                 )
+                # Reconstruct class source slice by line range
+                lines = text.splitlines()
+                start = (getattr(node, "lineno", 1) or 1) - 1
+                end = getattr(node, "end_lineno", None) or (start + 1)
+                class_text = "\n".join(lines[start:end])
+                metadata: dict = {}
+                if (
+                    stereotype == "Entity"
+                    or "dataclass" in decorators
+                    or any("BaseModel" in (d or "") for d in decorators)
+                    or "__tablename__" in class_text
+                    or node.name.endswith(("Entity", "Model"))
+                ):
+                    if "__tablename__" in class_text or "Column(" in class_text:
+                        stereotype = "Entity"
+                    elif "dataclass" in decorators or any(
+                        "BaseModel" in (d or "") for d in decorators
+                    ):
+                        stereotype = "Entity"
+                    if stereotype == "Entity":
+                        metadata = parse_entity_metadata(
+                            node.name, class_text, decorators, language="python"
+                        )
                 elements.append(
                     ArchElement(
                         id=self.make_id(node.name, file_path),
@@ -249,6 +299,7 @@ class PythonExtractor(BaseExtractor):
                         annotations=decorators,
                         extends=bases[0] if bases else None,
                         implements=bases[1:],
+                        metadata=metadata,
                     )
                 )
             elif isinstance(node, ast.FunctionDef):

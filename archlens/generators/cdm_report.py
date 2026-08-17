@@ -27,9 +27,10 @@ class CdmReportGenerator:
             "",
             "## How to read this",
             "",
-            "This CDM is **inferred from code** (JPA `@Entity` / Adempiere-metasfresh "
-            "`I_*` / `X_*` persistent models). It is a logical view of tables, columns, "
-            "and FK-style associations — not a substitute for the AD dictionary or DDL.",
+            "This CDM is **inferred from code** across stacks: JPA/`I_*` (Java), "
+            "TypeORM `@Entity` (TypeScript), SQLAlchemy/dataclass/Pydantic (Python), "
+            "and DB2/DCLGEN (COBOL). It is a logical view of tables, columns, and "
+            "FK-style associations — not a substitute for DDL or the AD dictionary.",
             "",
             "## Summary",
             "",
@@ -37,8 +38,25 @@ class CdmReportGenerator:
             f"- **Associations (FKs):** {cdm.stats.get('association_count', 0)}",
             f"- **Columns captured:** {cdm.stats.get('columns_total', 0)}",
             f"- **Kinds:** {cdm.stats.get('kinds', {})}",
+            f"- **Languages:** {cdm.stats.get('languages', {})}",
             "",
         ]
+
+        basic = cdm.stats.get("basic") or {}
+        if basic:
+            lines.extend(
+                [
+                    "### Basic data-model inventory",
+                    "",
+                    f"- Entities with columns: {basic.get('entities_with_columns', 0)} / "
+                    f"{basic.get('entity_count', 0)}",
+                    f"- Repositories: {basic.get('repository_count', 0)}",
+                    f"- Shared data / datasets: {basic.get('shared_data_count', 0)} / "
+                    f"{basic.get('dataset_count', 0)}",
+                    f"- Data relationships: {basic.get('data_relationships', 0)}",
+                    "",
+                ]
+            )
 
         if not cdm.entities:
             lines.extend(
@@ -72,6 +90,8 @@ class CdmReportGenerator:
             lines.append(f"### `{ent.table_name}`")
             lines.append("")
             lines.append(f"- **Type:** `{ent.name}` ({ent.kind})")
+            if ent.language:
+                lines.append(f"- **Language:** `{ent.language}`")
             if ent.container:
                 lines.append(f"- **Container:** {ent.container}")
             lines.append(f"- **Source:** `{ent.file_path}`")

@@ -9,6 +9,10 @@ import re
 from pathlib import Path
 
 from archlens.extractors.base import BaseExtractor
+from archlens.extractors.entity_metadata import (
+    merge_entity_metadata,
+    parse_cobol_data_metadata,
+)
 from archlens.extractors.mainframe_stereotype import infer_mainframe_stereotype
 from archlens.models import ArchElement, ArchRelationship, RelType
 
@@ -98,6 +102,17 @@ class CobolExtractor(BaseExtractor):
         override = self.config.mainframe_stereotype_override(program_name)
         stereotype = infer_mainframe_stereotype(analysis, override=override)
 
+        dcl_meta = parse_cobol_data_metadata(program_name, text) if is_copybook else {}
+        # DCLGEN copybooks are Shared Data + also emit/enrich Entity for the table
+        is_dclgen = bool(
+            is_copybook
+            and (
+                program_name.upper().startswith("DCL")
+                or ("DECLARE" in text.upper() and "TABLE" in text.upper())
+                or dcl_meta.get("columns")
+            )
+        )
+
         eid = f"cobol.{program_name}"
         metadata = {
             "kind": "copybook" if is_copybook else "program",
@@ -110,6 +125,9 @@ class CobolExtractor(BaseExtractor):
             "tables_written": analysis.get("tables_written", []),
             "maps": analysis.get("maps", []),
         }
+        if is_dclgen:
+            metadata = merge_entity_metadata(metadata, dcl_meta)
+            metadata["kind"] = "dclgen"
 
         elements = [
             ArchElement(
@@ -122,9 +140,16 @@ class CobolExtractor(BaseExtractor):
             )
         ]
 
-        # Synthetic DB2 table entities
-        for table in sorted(set(analysis.get("tables_read", []) + analysis.get("tables_written", []))):
+        # Synthetic DB2 table entities (basic + CDM)
+        tables = set(analysis.get("tables_read", []) + analysis.get("tables_written", []))
+        if is_dclgen and dcl_meta.get("table_name"):
+            tables.add(str(dcl_meta["table_name"]).upper())
+        for table in sorted(tables):
             tid = f"db2.{table}"
+            tmeta: dict = {"kind": "db2_table", "table_name": table, "language": "db2"}
+            if is_dclgen and str(dcl_meta.get("table_name", "")).upper() == table:
+                tmeta = merge_entity_metadata(tmeta, dcl_meta)
+                tmeta["kind"] = "db2_table"
             elements.append(
                 ArchElement(
                     id=tid,
@@ -132,7 +157,7 @@ class CobolExtractor(BaseExtractor):
                     stereotype="Entity",
                     language="db2",
                     file_path=rel,
-                    metadata={"kind": "db2_table", "table_name": table},
+                    metadata=tmeta,
                 )
             )
 

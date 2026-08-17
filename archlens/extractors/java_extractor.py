@@ -195,7 +195,7 @@ class JavaExtractor(BaseExtractor):
             metadata = {}
             if stereotype == "Entity" or re.match(r"^[IX]_", name):
                 stereotype = "Entity"
-                metadata = parse_entity_metadata(name, text, annotations)
+                metadata = parse_entity_metadata(name, text, annotations, language="java")
 
             eid = f"{package}.{name}" if package else self.make_id(name, file_path)
             elements.append(
@@ -265,7 +265,7 @@ class JavaExtractor(BaseExtractor):
                 metadata = {}
                 if stereotype == "Entity" or re.match(r"^[IX]_", name):
                     stereotype = "Entity"
-                    metadata = parse_entity_metadata(name, text, annotations)
+                    metadata = parse_entity_metadata(name, text, annotations, language="java")
                 eid = f"{package}.{name}" if package else self.make_id(name, file_path)
                 elements.append(
                     ArchElement(

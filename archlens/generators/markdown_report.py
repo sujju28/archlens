@@ -6,6 +6,7 @@ from collections import Counter, defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
 
+from archlens.analysis.data_model import basic_data_model_summary
 from archlens.analysis.health import HealthReport, HealthScorer
 from archlens.generators.mermaid import DEFAULT_MAX_EDGES, MermaidGenerator
 from archlens.models import ArchElement, ArchSnapshot, ImpactReport
@@ -126,6 +127,14 @@ class MarkdownReportGenerator:
         lines.extend(
             [
                 "",
+                "## Basic data model",
+                "",
+            ]
+        )
+        lines.extend(self._basic_data_model_section(snapshot))
+
+        lines.extend(
+            [
                 "## API & entry points",
                 "",
             ]
@@ -304,6 +313,47 @@ class MarkdownReportGenerator:
             for (a, b), n in edges.most_common(10):
                 lines.append(f"- `{a}` → `{b}` ({n} relationships)")
             lines.append("")
+        return lines
+
+    def _basic_data_model_section(self, snapshot: ArchSnapshot) -> list[str]:
+        summary = basic_data_model_summary(snapshot)
+        lines = [
+            "Inventory of data-facing types extracted across stacks "
+            "(Java/TS/Python entities, DB2 tables, JCL datasets). "
+            "For columns/FKs and ER diagrams, run `archlens cdm`.",
+            "",
+            f"- **Entities:** {summary['entity_count']} "
+            f"({summary['entities_with_columns']} with columns)",
+            f"- **Repositories:** {summary['repository_count']}",
+            f"- **Shared data / datasets:** "
+            f"{summary['shared_data_count']} / {summary['dataset_count']}",
+            f"- **Data relationships:** {summary['data_relationships']}",
+        ]
+        if summary.get("entities_by_language"):
+            langs = ", ".join(
+                f"{k}: {v}" for k, v in sorted(summary["entities_by_language"].items())
+            )
+            lines.append(f"- **Entities by language:** {langs}")
+        if summary.get("sample_entities"):
+            lines.append(
+                "- **Sample entities:** "
+                + ", ".join(f"`{n}`" for n in summary["sample_entities"][:12])
+            )
+        if summary.get("sample_tables"):
+            shown = []
+            for row in summary["sample_tables"][:10]:
+                label = f"`{row['table']}` ({row['columns']} cols"
+                if row.get("language"):
+                    label += f", {row['language']}"
+                label += ")"
+                shown.append(label)
+            lines.append("- **Sample tables:** " + ", ".join(shown))
+        if summary.get("sample_repositories"):
+            lines.append(
+                "- **Sample repositories:** "
+                + ", ".join(f"`{n}`" for n in summary["sample_repositories"][:10])
+            )
+        lines.append("")
         return lines
 
     def _entry_points(

@@ -12,6 +12,7 @@ from archlens.extractors.base import (
     TS_STEREOTYPE_MAP,
     BaseExtractor,
 )
+from archlens.extractors.entity_metadata import parse_entity_metadata
 from archlens.models import ArchElement, ArchRelationship, RelType
 
 
@@ -155,6 +156,19 @@ class TypeScriptExtractor(BaseExtractor):
                 extends=extends,
                 builtin_map=TS_STEREOTYPE_MAP,
             )
+            # Include preceding decorators — @Entity('users') sits outside class node
+            start = node.start_byte
+            if node.parent:
+                start = min(start, node.parent.start_byte)
+            class_text = source[start : node.end_byte].decode("utf-8", errors="replace")
+            metadata: dict = {}
+            if stereotype == "Entity" or "Entity" in decorators or name.endswith(
+                ("Entity", "Model")
+            ):
+                stereotype = "Entity"
+                metadata = parse_entity_metadata(
+                    name, class_text, decorators, language="typescript"
+                )
             elements.append(
                 ArchElement(
                     id=self.make_id(name, file_path),
@@ -166,6 +180,7 @@ class TypeScriptExtractor(BaseExtractor):
                     line_end=node.end_point[0] + 1,
                     annotations=decorators,
                     extends=extends,
+                    metadata=metadata,
                 )
             )
         return elements

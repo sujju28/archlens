@@ -19,6 +19,7 @@ class DataEntity:
     fk_columns: list[str] = field(default_factory=list)
     file_path: str = ""
     kind: str = "entity"
+    language: str = ""
     container: str | None = None
 
 
@@ -48,6 +49,7 @@ class CanonicalDataModel:
                     "fk_columns": e.fk_columns,
                     "file_path": e.file_path,
                     "kind": e.kind,
+                    "language": e.language,
                     "container": e.container,
                 }
                 for e in self.entities
@@ -72,14 +74,16 @@ def link_entity_foreign_keys(
 ) -> list[ArchRelationship]:
     """Add REFERENCES relationships from Entity fk_columns → target Entity."""
     entities = [e for e in elements if e.stereotype == "Entity"]
-    by_table: dict[str, ArchElement] = {}
+    by_table_ci: dict[str, ArchElement] = {}
+    by_name_ci: dict[str, ArchElement] = {}
     for e in entities:
         table = (e.metadata or {}).get("table_name") or _table_from_name(e.name)
-        if table and table not in by_table:
-            by_table[table] = e
-        # Also index I_C_Order / X_C_Order → C_Order
-        if e.name.startswith(("I_", "X_")) and len(e.name) > 2:
-            by_table.setdefault(e.name[2:], e)
+        if table:
+            by_table_ci.setdefault(str(table).lower(), e)
+        by_name_ci.setdefault(e.name.lower(), e)
+        if e.name.startswith(("I_", "X_", "DCL")) and len(e.name) > 2:
+            prefix_len = 3 if e.name.upper().startswith("DCL") else 2
+            by_table_ci.setdefault(e.name[prefix_len:].lower(), e)
 
     existing = {(r.source_id, r.target_id, r.rel_type) for r in relationships}
     added: list[ArchRelationship] = []
@@ -88,7 +92,9 @@ def link_entity_foreign_keys(
         meta = e.metadata or {}
         for fk in meta.get("fk_columns") or []:
             target_table = fk_target_table(fk)
-            target = by_table.get(target_table)
+            target = by_table_ci.get(target_table.lower()) or by_name_ci.get(
+                target_table.lower()
+            )
             if not target or target.id == e.id:
                 continue
             key = (e.id, target.id, RelType.REFERENCES.value)
@@ -107,29 +113,86 @@ def link_entity_foreign_keys(
     return relationships + added
 
 
+def basic_data_model_summary(snapshot: ArchSnapshot) -> dict[str, Any]:
+    """Lightweight cross-stack data-model inventory (entities, repos, datasets)."""
+    entities = [e for e in snapshot.elements if e.stereotype == "Entity"]
+    repos = [e for e in snapshot.elements if e.stereotype == "Repository"]
+    shared = [e for e in snapshot.elements if e.stereotype == "Shared Data"]
+    datasets = [
+        e
+        for e in snapshot.elements
+        if (e.metadata or {}).get("kind") == "dataset" or e.language == "dataset"
+    ]
+    with_columns = sum(1 for e in entities if (e.metadata or {}).get("columns"))
+    by_lang: Counter[str] = Counter()
+    tables: list[tuple[str, int, str]] = []
+    for e in entities:
+        by_lang[e.language or (e.metadata or {}).get("language") or "unknown"] += 1
+        table = (e.metadata or {}).get("table_name") or e.name
+        cols = (e.metadata or {}).get("columns") or []
+        tables.append((str(table), len(cols), e.language or ""))
+
+    access_rels = [
+        r
+        for r in snapshot.relationships
+        if r.rel_type
+        in (
+            "accesses_table",
+            "writes_table",
+            "references",
+            "reads_dataset",
+            "writes_dataset",
+        )
+    ]
+    # Prefer tables that already have column metadata
+    sample_tables = [
+        {"table": t, "columns": n, "language": lang}
+        for t, n, lang in sorted(tables, key=lambda x: (-x[1], x[0].lower()))[:15]
+    ]
+    return {
+        "entity_count": len(entities),
+        "entities_with_columns": with_columns,
+        "repository_count": len(repos),
+        "shared_data_count": len(shared),
+        "dataset_count": len(datasets),
+        "data_relationships": len(access_rels),
+        "entities_by_language": dict(by_lang),
+        "sample_entities": sorted({e.name for e in entities})[:20],
+        "sample_repositories": sorted({e.name for e in repos})[:15],
+        "sample_tables": sample_tables,
+    }
+
+
 def build_canonical_data_model(snapshot: ArchSnapshot) -> CanonicalDataModel:
     """Build a CDM view from Entity elements in a snapshot."""
     # Prefer I_* over X_* for the same table (interfaces carry the contract)
-    by_table: dict[str, ArchElement] = {}
+    by_table: dict[str, ArchElement] = {}  # lower(table) → element
+    display_name: dict[str, str] = {}
     for e in snapshot.elements:
         if e.stereotype != "Entity":
             continue
         table = (e.metadata or {}).get("table_name") or _table_from_name(e.name)
         if not table:
             continue
-        existing = by_table.get(table)
+        key = str(table).lower()
+        existing = by_table.get(key)
         if existing is None:
-            by_table[table] = e
+            by_table[key] = e
+            display_name[key] = str(table)
             continue
-        # Prefer richer column metadata / I_ over X_
         score_new = _entity_score(e)
         score_old = _entity_score(existing)
         if score_new > score_old:
-            by_table[table] = e
+            by_table[key] = e
+            # keep richer column table name if present
+            if (e.metadata or {}).get("table_name"):
+                display_name[key] = str(e.metadata["table_name"])
 
     entities: list[DataEntity] = []
-    for table, e in sorted(by_table.items(), key=lambda x: x[0].lower()):
+    for key, e in sorted(by_table.items(), key=lambda x: x[0]):
         meta = e.metadata or {}
+        table = display_name.get(key, key)
+        container = meta.get("container") if isinstance(meta.get("container"), str) else None
         entities.append(
             DataEntity(
                 id=e.id,
@@ -139,18 +202,20 @@ def build_canonical_data_model(snapshot: ArchSnapshot) -> CanonicalDataModel:
                 fk_columns=list(meta.get("fk_columns") or []),
                 file_path=e.file_path,
                 kind=str(meta.get("kind") or "entity"),
-                container=(meta.get("container") if isinstance(meta.get("container"), str) else None)
-                or (e.metadata.get("container") if e.metadata else None),
+                language=e.language or str(meta.get("language") or ""),
+                container=container,
             )
         )
 
     table_ids = {e.table_name: e.id for e in entities}
+    table_ids_ci = {e.table_name.lower(): e.table_name for e in entities}
     associations: list[DataAssociation] = []
     seen: set[tuple[str, str, str]] = set()
     for e in entities:
         for fk in e.fk_columns:
-            tgt = fk_target_table(fk)
-            if tgt not in table_ids or tgt == e.table_name:
+            tgt_raw = fk_target_table(fk)
+            tgt = table_ids_ci.get(tgt_raw.lower())
+            if not tgt or tgt == e.table_name:
                 continue
             key = (e.table_name, tgt, fk)
             if key in seen:
@@ -191,6 +256,9 @@ def build_canonical_data_model(snapshot: ArchSnapshot) -> CanonicalDataModel:
         )
 
     kinds = Counter(e.kind for e in entities)
+    lang_counts: Counter[str] = Counter(
+        (e.language or "unknown") for e in entities
+    )
     return CanonicalDataModel(
         entities=entities,
         associations=associations,
@@ -199,6 +267,8 @@ def build_canonical_data_model(snapshot: ArchSnapshot) -> CanonicalDataModel:
             "association_count": len(associations),
             "kinds": dict(kinds),
             "columns_total": sum(len(e.columns) for e in entities),
+            "languages": dict(lang_counts),
+            "basic": basic_data_model_summary(snapshot),
         },
     )
 
@@ -206,7 +276,9 @@ def build_canonical_data_model(snapshot: ArchSnapshot) -> CanonicalDataModel:
 def _table_from_name(name: str) -> str:
     if name.startswith(("I_", "X_")) and len(name) > 2:
         return name[2:]
-    for suffix in ("Entity", "Model", "PO"):
+    if name.upper().startswith("DCL") and len(name) > 3:
+        return name[3:]
+    for suffix in ("Entity", "Model", "PO", "Record"):
         if name.endswith(suffix) and name != suffix:
             return name[: -len(suffix)]
     return name
@@ -214,9 +286,11 @@ def _table_from_name(name: str) -> str:
 
 def _entity_score(e: ArchElement) -> int:
     meta = e.metadata or {}
-    score = len(meta.get("columns") or [])
+    score = len(meta.get("columns") or []) * 2 + len(meta.get("fk_columns") or [])
     if e.name.startswith("I_"):
         score += 1000
     if meta.get("table_name"):
         score += 50
+    if meta.get("kind") in ("db2_table", "po", "jpa", "typeorm", "sqlalchemy", "dclgen"):
+        score += 25
     return score

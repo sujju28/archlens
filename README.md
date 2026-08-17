@@ -9,7 +9,7 @@ ArchLens treats architecture as **data extracted from code** using tree-sitter A
 - **Multi-language extraction** — Java/Spring, TypeScript/React/NestJS, Python/FastAPI
 - **Mainframe extraction** — COBOL programs (CALL, EXEC CICS, EXEC SQL, COPY), JCL jobs/steps/datasets, behavioral stereotypes (UI / Service / Repository / Batch Job / Shared Data)
 - **SQLite snapshots** — versioned architecture models stored in `.archlens/`
-- **Canonical data model (CDM)** — infer tables, columns, and FK associations from JPA `@Entity` and Adempiere/metasfresh `I_*` / `X_*` PO models (`archlens cdm`)
+- **Canonical data model (CDM)** — tables, columns, and FK associations from Java (JPA/`I_*`), TypeScript (TypeORM), Python (SQLAlchemy/dataclass/Pydantic), and COBOL (DB2/DCLGEN) via `archlens cdm`; basic data-model inventory is also included in `archlens report`
 - **Drift detection** — compare current code against the last snapshot
 - **Impact analysis** — blast radius of file or component changes
 - **Mermaid / Structurizr diagrams** — C4 context, container, and component views
@@ -83,7 +83,7 @@ archlens agent --repo . --cli
 | `archlens events` | Detect Kafka/RabbitMQ/SQS producers & consumers |
 | `archlens contracts` | Link services via OpenAPI + HTTP call sites |
 | `archlens health` | Score coupling, cycles, layer violations |
-| `archlens cdm` | Generate canonical data model from Entity/PO/JPA types |
+| `archlens cdm` | Generate CDM (tables/columns/FKs) + basic data-model inventory |
 | `archlens federate` | Fetch remote architecture JSON / HTTP export |
 
 ## Phase 3 (distributed)

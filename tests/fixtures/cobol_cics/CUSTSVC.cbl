@@ -1,0 +1,15 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. CUSTSVC.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       COPY CUSTCPY.
+       COPY DCLCUST.
+       PROCEDURE DIVISION.
+           EXEC SQL
+                SELECT NAME INTO :WS-NAME FROM CUSTOMER
+                WHERE CUSTNO = :WS-CUSTNO
+           END-EXEC.
+           EXEC SQL
+                INSERT INTO AUDIT_LOG (CUSTNO) VALUES (:WS-CUSTNO)
+           END-EXEC.
+           GOBACK.

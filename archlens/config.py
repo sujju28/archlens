@@ -63,15 +63,37 @@ class ImpactConfig(BaseModel):
     )
 
 
+class MainframeStereotypeOverride(BaseModel):
+    program: str | None = None
+    program_pattern: str | None = None  # glob, e.g. "DB*"
+    stereotype: str
+
+
+class MainframeConfig(BaseModel):
+    """COBOL / CICS / DB2 / JCL options (Phase 1.5)."""
+
+    dialect: str = "ibm-enterprise"
+    copybook_paths: list[str] = Field(default_factory=list)
+    jcl_paths: list[str] = Field(default_factory=list)
+    bms_maps_path: str | None = None
+    cics_definitions: list[str] = Field(default_factory=list)
+    # Inline TRANSID → PROGRAM map
+    transactions: dict[str, str] = Field(default_factory=dict)
+    stereotypes: list[MainframeStereotypeOverride] = Field(default_factory=list)
+
+
 class ArchLensConfig(BaseModel):
     project_name: str = "My Application"
-    languages: list[str] = Field(default_factory=lambda: ["java", "typescript", "python"])
+    languages: list[str] = Field(
+        default_factory=lambda: ["java", "typescript", "python", "cobol"]
+    )
     stereotypes: dict[str, list[StereotypeMapping]] = Field(default_factory=dict)
     containers: list[ContainerMapping] = Field(default_factory=list)
     include: list[str] = Field(default_factory=lambda: list(DEFAULT_INCLUDE))
     exclude: list[str] = Field(default_factory=lambda: list(DEFAULT_EXCLUDE))
     diagrams: DiagramConfig = Field(default_factory=DiagramConfig)
     impact: ImpactConfig = Field(default_factory=ImpactConfig)
+    mainframe: MainframeConfig = Field(default_factory=MainframeConfig)
 
     def custom_stereotype_for(self, language: str, annotation: str) -> str | None:
         mappings = self.stereotypes.get(language, [])
@@ -106,6 +128,16 @@ class ArchLensConfig(BaseModel):
                 return mapping.name
         return None
 
+    def mainframe_stereotype_override(self, program_name: str) -> str | None:
+        for rule in self.mainframe.stereotypes:
+            if rule.program and rule.program.upper() == program_name.upper():
+                return rule.stereotype
+            if rule.program_pattern and fnmatch.fnmatch(
+                program_name.upper(), rule.program_pattern.upper()
+            ):
+                return rule.stereotype
+        return None
+
 
 def default_config_yaml() -> str:
     return """# .archlens.yaml
@@ -116,6 +148,7 @@ languages:
   - java
   - typescript
   - python
+  - cobol
 
 # Custom stereotype mappings (only for non-standard annotations / path overrides)
 stereotypes:
@@ -129,6 +162,19 @@ stereotypes:
   #     stereotype: "Worker"
   #   - convention: "adapters/"
   #     stereotype: "Gateway"
+
+# Mainframe (COBOL/CICS/DB2/JCL) — optional
+mainframe:
+  dialect: "ibm-enterprise"
+  copybook_paths: []
+  jcl_paths: []
+  # transactions:
+  #   CUST: "CUSTINQ"
+  stereotypes: []
+  #   - program: "CUSTINQ"
+  #     stereotype: "Controller"
+  #   - program_pattern: "DB*"
+  #     stereotype: "Repository"
 
 # Monorepo: map subdirectory globs → C4 Container (service) names
 # Leave empty for single-service repos. Multi-repo cross-links are Phase 3.
@@ -146,6 +192,8 @@ include:
   - "src/"
   - "app/"
   - "lib/"
+  - "cobol/"
+  - "jcl/"
   - ""
 
 # Directories / patterns to ignore

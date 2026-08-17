@@ -25,6 +25,19 @@ class RelType(str, Enum):
     COMPOSES = "composes"
     IMPLEMENTS = "implements"
     REFERENCES = "references"  # data-model FK / association
+    # Mainframe
+    CICS_LINK = "cics_link"
+    CICS_XCTL = "cics_xctl"
+    CICS_START = "cics_start"
+    COPIES = "copies"
+    ACCESSES_TABLE = "accesses_table"
+    WRITES_TABLE = "writes_table"
+    READS_DATASET = "reads_dataset"
+    WRITES_DATASET = "writes_dataset"
+    EXECUTES = "executes"
+    USES_MAP = "uses_map"
+    SENDS_MQ = "sends_mq"
+    RECEIVES_MQ = "receives_mq"
 
 
 class Stereotype(str, Enum):
@@ -38,6 +51,8 @@ class Stereotype(str, Enum):
     GATEWAY = "Gateway"
     WORKER = "Worker"
     ENTITY = "Entity"
+    BATCH_JOB = "Batch Job"
+    SHARED_DATA = "Shared Data"
     UNKNOWN = "Unknown"
 
 

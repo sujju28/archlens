@@ -18,8 +18,10 @@ LAYER_RANK = {
     "Middleware": 2,
     "Service": 3,
     "Worker": 3,
+    "Batch Job": 3,
     "Repository": 4,
     "Entity": 4,
+    "Shared Data": 4,
     "Configuration": 5,
     "Component": 3,
 }

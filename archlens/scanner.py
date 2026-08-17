@@ -76,7 +76,20 @@ def collect_files(repo: Path, config: ArchLensConfig) -> list[Path]:
     if not roots:
         roots = [repo]
 
-    extensions = {".java", ".ts", ".tsx", ".jsx", ".js", ".py"}
+    extensions = {
+        ".java",
+        ".ts",
+        ".tsx",
+        ".jsx",
+        ".js",
+        ".py",
+        ".cbl",
+        ".cob",
+        ".cpy",
+        ".jcl",
+        ".proc",
+        ".bms",
+    }
     seen: set[Path] = set()
     for root in roots:
         if root.is_file():

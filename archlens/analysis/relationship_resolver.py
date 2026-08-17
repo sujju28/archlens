@@ -98,5 +98,51 @@ class RelationshipResolver:
                     )
 
         from archlens.analysis.data_model import link_entity_foreign_keys
+        from archlens.extractors.mainframe_stereotype import infer_mainframe_stereotype
+
+        # Mainframe post-pass: mark LINK/JCL targets and re-infer stereotypes
+        linked_targets = {
+            r.target_id
+            for r in resolved
+            if r.rel_type in ("cics_link", "cics_xctl", "cics_start")
+        }
+        jcl_targets = {
+            r.target_id for r in resolved if r.rel_type == "executes"
+        }
+        for el in elements:
+            if el.language not in ("cobol", "jcl"):
+                continue
+            meta = dict(el.metadata or {})
+            analysis = dict(meta.get("analysis") or {})
+            if el.id in linked_targets:
+                analysis["called_via_cics_link"] = True
+                meta["called_via_cics_link"] = True
+            if el.id in jcl_targets or meta.get("called_via_jcl_exec_pgm"):
+                analysis["called_via_jcl_exec_pgm"] = True
+                meta["called_via_jcl_exec_pgm"] = True
+            for flag in (
+                "is_copybook",
+                "has_bms_send_map",
+                "has_bms_receive_map",
+                "has_exec_sql",
+                "has_vsam_read_write",
+                "has_mq_operations",
+                "is_jcl_job",
+            ):
+                if flag in meta and flag not in analysis:
+                    analysis[flag] = meta[flag]
+            if meta.get("kind") == "copybook":
+                analysis["is_copybook"] = True
+            if meta.get("kind") == "jcl_job":
+                analysis["is_jcl_job"] = True
+
+            override = None
+            # config is not on resolver — keep behavioral only here; overrides applied at extract
+            if analysis:
+                meta["analysis"] = analysis
+                # Don't downgrade Controllers set via yaml override at extract time unless Component
+                if el.stereotype in ("Component", "Batch Job", "Service", "Repository"):
+                    el.stereotype = infer_mainframe_stereotype(analysis)
+                el.metadata = meta
 
         return link_entity_foreign_keys(elements, resolved)

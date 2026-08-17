@@ -1,12 +1,13 @@
 # ArchLens
 
-Living architecture intelligence for any codebase — scan, query, detect drift, analyze change impact, and build a **canonical data model** from entities.
+Living architecture intelligence for any codebase — scan, query, detect drift, analyze change impact, and build a **canonical data model** from entities. Supports modern stacks (Java, TypeScript, Python) and **mainframe** (COBOL, CICS, DB2, JCL).
 
-ArchLens treats architecture as **data extracted from code** using tree-sitter AST parsing. It builds a C4-compatible model in SQLite and exposes a CLI (and optional MCP server) for CI and AI assistants.
+ArchLens treats architecture as **data extracted from code** using tree-sitter AST parsing (plus regex parsers for COBOL/JCL). It builds a C4-compatible model in SQLite and exposes a CLI (and optional MCP server) for CI and AI assistants.
 
 ## Features
 
 - **Multi-language extraction** — Java/Spring, TypeScript/React/NestJS, Python/FastAPI
+- **Mainframe extraction** — COBOL programs (CALL, EXEC CICS, EXEC SQL, COPY), JCL jobs/steps/datasets, behavioral stereotypes (UI / Service / Repository / Batch Job / Shared Data)
 - **SQLite snapshots** — versioned architecture models stored in `.archlens/`
 - **Canonical data model (CDM)** — infer tables, columns, and FK associations from JPA `@Entity` and Adempiere/metasfresh `I_*` / `X_*` PO models (`archlens cdm`)
 - **Drift detection** — compare current code against the last snapshot

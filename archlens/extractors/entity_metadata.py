@@ -61,11 +61,11 @@ _PY_SA_FK = re.compile(
 
 # --- COBOL DCLGEN / copybook ---
 _DCLGEN_TABLE = re.compile(
-    r"""(?:EXEC\s+SQL\s+)?(?:DECLARE|declare)\s+(\w+)\s+TABLE""",
+    r"""(?:EXEC\s+SQL\s+)?(?:DECLARE|declare)\s+(?:\w+\.)?(\w+)\s+TABLE""",
     re.IGNORECASE,
 )
 _DCLGEN_SQL_COLS = re.compile(
-    r"""DECLARE\s+\w+\s+TABLE\s*\((.*?)\)\s*END-EXEC""",
+    r"""DECLARE\s+(?:\w+\.)?\w+\s+TABLE\s*\((.*?)\)\s*END-EXEC""",
     re.IGNORECASE | re.DOTALL,
 )
 _DCL_SQL_COL = re.compile(

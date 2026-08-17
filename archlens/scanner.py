@@ -86,6 +86,7 @@ def collect_files(repo: Path, config: ArchLensConfig) -> list[Path]:
         ".cbl",
         ".cob",
         ".cpy",
+        ".dcl",
         ".jcl",
         ".proc",
         ".bms",

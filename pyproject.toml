@@ -21,12 +21,12 @@ dependencies = [
     "networkx>=3.0",
     "rich>=13.0",
     "pyyaml>=6.0",
-    "mcp>=1.0",
+    "mcp>=1.0,<2",
 ]
 
 [project.optional-dependencies]
-mcp = ["mcp>=1.0"]  # kept for backward-compatible extras installs
-ai = ["mcp>=1.0"]
+mcp = ["mcp>=1.0,<2"]  # kept for backward-compatible extras installs
+ai = ["mcp>=1.0,<2"]
 dev = ["pytest>=8.0", "pytest-cov>=5.0"]
 
 [project.scripts]

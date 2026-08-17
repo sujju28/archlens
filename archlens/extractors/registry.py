@@ -35,7 +35,7 @@ def detect_languages(repo_path: Path) -> list[str]:
         "java": {".java"},
         "typescript": {".ts", ".tsx", ".jsx"},
         "python": {".py"},
-        "cobol": {".cbl", ".cob", ".cpy"},
+        "cobol": {".cbl", ".cob", ".cpy", ".dcl"},
         "jcl": {".jcl", ".proc"},
     }
     for lang, exts in ext_map.items():

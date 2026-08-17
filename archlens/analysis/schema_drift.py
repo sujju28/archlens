@@ -125,6 +125,7 @@ DEFAULT_SCHEMA_GLOBS = [
     "**/changelog/**/*.{sql,yaml,yml,xml}",
     "**/schema/**/*.sql",
     "**/ddl/**/*.sql",
+    "**/ddl/**/*.ddl",
     "**/sql/**/*.sql",
 ]
 

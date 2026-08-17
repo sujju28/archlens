@@ -75,19 +75,47 @@ _COBOL_RESERVED_CALL = {
     "RETURNING",
     "END-CALL",
 }
+_SQL_NON_TABLES = {
+    "SELECT",
+    "INTO",
+    "FROM",
+    "WHERE",
+    "SET",
+    "VALUES",
+    "TABLE",
+    "TO",
+    "WS",
+    "OF",
+    "AS",
+    "ON",
+    "JOIN",
+    "LEFT",
+    "RIGHT",
+    "INNER",
+    "OUTER",
+    "FETCH",
+    "CURSOR",
+    "FOR",
+    "UPDATE",
+    "INSERT",
+    "DELETE",
+    "DECLARE",
+    "INSPECT",  # COBOL verb often adjacent in noisy regex windows
+    "SYSIBM",
+}
 
 
 class CobolExtractor(BaseExtractor):
     language = "cobol"
 
     def supported_extensions(self) -> set[str]:
-        return {".cbl", ".cob", ".cpy"}
+        return {".cbl", ".cob", ".cpy", ".dcl"}
 
     def extract_elements(self, file_path: Path) -> list[ArchElement]:
         raw = file_path.read_text(encoding="utf-8", errors="replace")
         text = normalize_cobol_source(raw)
         rel = self.relative_path(file_path)
-        is_copybook = file_path.suffix.lower() == ".cpy"
+        is_copybook = file_path.suffix.lower() in (".cpy", ".dcl")
 
         program_name = None
         m = _PROGRAM_ID.search(text)
@@ -107,9 +135,11 @@ class CobolExtractor(BaseExtractor):
         is_dclgen = bool(
             is_copybook
             and (
-                program_name.upper().startswith("DCL")
-                or ("DECLARE" in text.upper() and "TABLE" in text.upper())
-                or dcl_meta.get("columns")
+                ("DECLARE" in text.upper() and "TABLE" in text.upper())
+                or (
+                    program_name.upper().startswith("DCL")
+                    and ("EXEC SQL" in text.upper() or "DECLARE" in text.upper())
+                )
             )
         )
 
@@ -192,7 +222,9 @@ class CobolExtractor(BaseExtractor):
         else:
             src_id = file_els[0].id
 
-        analysis = self._analyze(text, is_copybook=file_path.suffix.lower() == ".cpy")
+        analysis = self._analyze(
+            text, is_copybook=file_path.suffix.lower() in (".cpy", ".dcl")
+        )
         rels: list[ArchRelationship] = []
 
         def add(tgt_id: str, rel_type: str, desc: str, tech: str | None = None) -> None:
@@ -256,8 +288,16 @@ class CobolExtractor(BaseExtractor):
         send_maps = [m.group(1).upper() for m in _CICS_SEND_MAP.finditer(text)]
         recv_maps = [m.group(1).upper() for m in _CICS_RECV_MAP.finditer(text)]
         copies = [m.group(1).upper() for m in _COPY.finditer(text)]
-        tables_read = [m.group(1).upper().split(".")[-1] for m in _SQL_FROM.finditer(text)]
-        tables_written = [m.group(1).upper().split(".")[-1] for m in _SQL_INTO.finditer(text)]
+        tables_read = [
+            t
+            for t in (m.group(1).upper().split(".")[-1] for m in _SQL_FROM.finditer(text))
+            if t not in _SQL_NON_TABLES and len(t) > 2
+        ]
+        tables_written = [
+            t
+            for t in (m.group(1).upper().split(".")[-1] for m in _SQL_INTO.finditer(text))
+            if t not in _SQL_NON_TABLES and len(t) > 2
+        ]
 
         return {
             "is_copybook": is_copybook,

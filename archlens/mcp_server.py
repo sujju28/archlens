@@ -21,14 +21,22 @@ from archlens.mcp_tools import (
     tool_domains,
     tool_drift,
     tool_events,
+    tool_explain,
     tool_federate,
+    tool_grain,
     tool_health,
     tool_impact,
     tool_intents,
+    tool_onboard,
+    tool_ops,
+    tool_playbook,
     tool_query,
+    tool_reading_priority,
     tool_report,
+    tool_rules,
     tool_scan,
     tool_schema_drift,
+    tool_strangler,
     tool_timeline,
     tool_traces,
 )
@@ -160,6 +168,53 @@ def run_mcp(transport: str = "stdio", port: int = 8080) -> None:
     ) -> str:
         """List and refresh the hybrid capability catalog from entry points."""
         return tool_capabilities(repo_path, output_path=output_path, refresh=refresh)
+
+    @mcp.tool(name="archlens_playbook")
+    def archlens_playbook(
+        repo_path: str,
+        capability: str | None = None,
+        output_path: str | None = None,
+        limit: int = 8,
+    ) -> str:
+        """Reading path + change playbook for a capability (files to read, blast radius, tests)."""
+        return tool_playbook(
+            repo_path, capability=capability, output_path=output_path, limit=limit
+        )
+
+    @mcp.tool(name="archlens_explain")
+    def archlens_explain(repo_path: str, capability: str, no_llm: bool = False) -> str:
+        """Grounded capability explanation from citations (optional LLM)."""
+        return tool_explain(repo_path, capability, no_llm=no_llm)
+
+    @mcp.tool(name="archlens_strangler")
+    def archlens_strangler(repo_path: str, capability: str) -> str:
+        """Strangler extract slice: programs, tables, jobs, maps."""
+        return tool_strangler(repo_path, capability)
+
+    @mcp.tool(name="archlens_grain")
+    def archlens_grain(repo_path: str, capability: str) -> str:
+        """Paragraph, PERFORM, method, BMS field, and COPY grain."""
+        return tool_grain(repo_path, capability)
+
+    @mcp.tool(name="archlens_onboard")
+    def archlens_onboard(repo_path: str, capability: str | None = None) -> str:
+        """90-minute onboarding: context, capabilities, one guided change."""
+        return tool_onboard(repo_path, capability=capability)
+
+    @mcp.tool(name="archlens_rules")
+    def archlens_rules(repo_path: str, capability: str) -> str:
+        """Candidate business rules and source comments for a capability."""
+        return tool_rules(repo_path, capability)
+
+    @mcp.tool(name="archlens_ops")
+    def archlens_ops(repo_path: str, capability: str | None = None) -> str:
+        """JCL / CICS TRANSID / BMS ops overlay."""
+        return tool_ops(repo_path, capability=capability)
+
+    @mcp.tool(name="archlens_reading_priority")
+    def archlens_reading_priority(repo_path: str) -> str:
+        """Hotspot vs unreachable reading order."""
+        return tool_reading_priority(repo_path)
 
     @mcp.tool(name="archlens_schema_drift")
     def archlens_schema_drift(repo_path: str, output_path: str | None = None) -> str:

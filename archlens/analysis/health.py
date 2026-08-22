@@ -8,7 +8,7 @@ from typing import Any
 
 import networkx as nx
 
-from archlens.models import ArchSnapshot
+from archlens.models import ArchSnapshot, is_code_level
 from archlens.storage.sqlite_store import SQLiteStore
 
 LAYER_RANK = {
@@ -52,8 +52,10 @@ class HealthReport:
 class HealthScorer:
     def analyze(self, snapshot: ArchSnapshot, store: SQLiteStore | None = None) -> HealthReport:
         g = nx.DiGraph()
-        by_id = {e.id: e for e in snapshot.elements}
+        by_id = {e.id: e for e in snapshot.elements if not is_code_level(e)}
         for e in snapshot.elements:
+            if is_code_level(e):
+                continue
             g.add_node(e.id, stereotype=e.stereotype, name=e.name)
         for r in snapshot.relationships:
             if r.source_id in by_id and r.target_id in by_id:

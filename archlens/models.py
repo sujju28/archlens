@@ -38,6 +38,7 @@ class RelType(str, Enum):
     USES_MAP = "uses_map"
     SENDS_MQ = "sends_mq"
     RECEIVES_MQ = "receives_mq"
+    PERFORMS = "performs"  # COBOL paragraph PERFORM / THRU
 
 
 class Stereotype(str, Enum):
@@ -78,6 +79,13 @@ class ArchElement(BaseModel):
         if isinstance(v, Stereotype):
             return v.value
         return str(v) if v else Stereotype.UNKNOWN.value
+
+
+def is_code_level(el: ArchElement) -> bool:
+    """Paragraphs, BMS fields, and other Code-level grain (not C4 component)."""
+    if el.c4_level == C4Level.CODE.value:
+        return True
+    return (el.metadata or {}).get("kind") in {"paragraph", "bms_field"}
 
 
 class ArchRelationship(BaseModel):

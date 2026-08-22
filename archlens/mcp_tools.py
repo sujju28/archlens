@@ -282,6 +282,160 @@ def tool_capabilities(repo_path: str, output_path: str | None = None, refresh: b
     return json.dumps(catalog.to_dict(), indent=2)
 
 
+def tool_explain(
+    repo_path: str,
+    capability: str,
+    no_llm: bool = False,
+) -> str:
+    from archlens.analysis.explain import explain_capability
+    from archlens.analysis.playbook import match_capability, resolve_catalog
+    from archlens.storage.sqlite_store import SQLiteStore, default_db_path
+
+    snap = SQLiteStore(default_db_path(repo_path)).get_latest_snapshot()
+    if not snap:
+        return json.dumps({"error": "No snapshot. Run archlens_scan first."})
+    cap = match_capability(resolve_catalog(snap, repo_path), capability)
+    if not cap:
+        return json.dumps({"error": f"No capability matching {capability}"})
+    expl = explain_capability(snap, cap, repo=repo_path, use_llm=not no_llm)
+    return json.dumps(expl.to_dict() | {"markdown": expl.to_markdown()}, indent=2)
+
+
+def tool_strangler(repo_path: str, capability: str) -> str:
+    from archlens.analysis.playbook import match_capability, resolve_catalog
+    from archlens.analysis.strangler import strangler_slice
+    from archlens.storage.sqlite_store import SQLiteStore, default_db_path
+
+    snap = SQLiteStore(default_db_path(repo_path)).get_latest_snapshot()
+    if not snap:
+        return json.dumps({"error": "No snapshot. Run archlens_scan first."})
+    cap = match_capability(resolve_catalog(snap, repo_path), capability)
+    if not cap:
+        return json.dumps({"error": f"No capability matching {capability}"})
+    return json.dumps(
+        strangler_slice(
+            snap,
+            capability_id=cap.id,
+            title=cap.title or cap.id,
+            seed_names=list(cap.elements),
+            related_tables=list(cap.related_tables),
+        ).to_dict(),
+        indent=2,
+    )
+
+
+def tool_grain(repo_path: str, capability: str) -> str:
+    from archlens.analysis.fine_grain import fine_grain_for
+    from archlens.analysis.playbook import match_capability, resolve_catalog
+    from archlens.models import is_code_level
+    from archlens.storage.sqlite_store import SQLiteStore, default_db_path
+
+    snap = SQLiteStore(default_db_path(repo_path)).get_latest_snapshot()
+    if not snap:
+        return json.dumps({"error": "No snapshot. Run archlens_scan first."})
+    cap = match_capability(resolve_catalog(snap, repo_path), capability)
+    if not cap:
+        return json.dumps({"error": f"No capability matching {capability}"})
+    by_name = {e.name: e for e in snap.elements if not is_code_level(e)}
+    seeds = [by_name[n] for n in cap.elements if n in by_name]
+    return json.dumps(fine_grain_for(snap, seeds, repo=repo_path, capability_id=cap.id).to_dict(), indent=2)
+
+
+def tool_onboard(repo_path: str, capability: str | None = None) -> str:
+    from archlens.analysis.onboard import onboard_markdown
+    from archlens.analysis.playbook import resolve_catalog
+    from archlens.storage.sqlite_store import SQLiteStore, default_db_path
+
+    snap = SQLiteStore(default_db_path(repo_path)).get_latest_snapshot()
+    if not snap:
+        return json.dumps({"error": "No snapshot. Run archlens_scan first."})
+    md = onboard_markdown(snap, resolve_catalog(snap, repo_path), repo=repo_path, capability_id=capability)
+    return json.dumps({"markdown": md}, indent=2)
+
+
+def tool_rules(repo_path: str, capability: str) -> str:
+    from archlens.analysis.playbook import match_capability, resolve_catalog
+    from archlens.analysis.source_harvest import harvest_for_elements
+    from archlens.models import is_code_level
+    from archlens.storage.sqlite_store import SQLiteStore, default_db_path
+
+    snap = SQLiteStore(default_db_path(repo_path)).get_latest_snapshot()
+    if not snap:
+        return json.dumps({"error": "No snapshot. Run archlens_scan first."})
+    cap = match_capability(resolve_catalog(snap, repo_path), capability)
+    if not cap:
+        return json.dumps({"error": f"No capability matching {capability}"})
+    by_name = {e.name: e for e in snap.elements if not is_code_level(e)}
+    seeds = [by_name[n] for n in cap.elements if n in by_name]
+    return json.dumps(harvest_for_elements(snap, seeds, Path(repo_path)).to_dict(), indent=2)
+
+
+def tool_ops(repo_path: str, capability: str | None = None) -> str:
+    from archlens.analysis.ops_overlay import ops_overlay
+    from archlens.analysis.playbook import match_capability, resolve_catalog
+    from archlens.storage.sqlite_store import SQLiteStore, default_db_path
+
+    snap = SQLiteStore(default_db_path(repo_path)).get_latest_snapshot()
+    if not snap:
+        return json.dumps({"error": "No snapshot. Run archlens_scan first."})
+    seeds = None
+    if capability:
+        cap = match_capability(resolve_catalog(snap, repo_path), capability)
+        if cap:
+            seeds = list(cap.elements)
+    return json.dumps(ops_overlay(snap, repo=repo_path, seed_names=seeds).to_dict(), indent=2)
+
+
+def tool_reading_priority(repo_path: str) -> str:
+    from archlens.analysis.reading_priority import reading_priority
+    from archlens.storage.sqlite_store import SQLiteStore, default_db_path
+
+    snap = SQLiteStore(default_db_path(repo_path)).get_latest_snapshot()
+    if not snap:
+        return json.dumps({"error": "No snapshot. Run archlens_scan first."})
+    return json.dumps(reading_priority(snap).to_dict(), indent=2)
+
+
+def tool_playbook(
+    repo_path: str,
+    capability: str | None = None,
+    output_path: str | None = None,
+    limit: int = 8,
+) -> str:
+    from archlens.analysis.playbook import (
+        playbooks_for_catalog,
+        playbooks_markdown,
+        resolve_catalog,
+    )
+    from archlens.storage.sqlite_store import SQLiteStore, default_db_path
+
+    snap = SQLiteStore(default_db_path(repo_path)).get_latest_snapshot()
+    if not snap:
+        return json.dumps({"error": "No snapshot. Run archlens_scan first."})
+    books = playbooks_for_catalog(
+        snap,
+        resolve_catalog(snap, repo_path),
+        repo=repo_path,
+        limit=1 if capability else limit,
+        capability_id=capability,
+    )
+    if not books:
+        return json.dumps({"error": "No matching capability. Run archlens_scan first."})
+    if output_path:
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        md = books[0].to_markdown() if capability else playbooks_markdown(books)
+        out.write_text(md, encoding="utf-8")
+    return json.dumps(
+        {
+            "status": "success",
+            "playbook_count": len(books),
+            "playbooks": [b.to_dict() for b in books],
+        },
+        indent=2,
+    )
+
+
 def tool_schema_drift(repo_path: str, output_path: str | None = None) -> str:
     from archlens.analysis.schema_drift import analyze_schema_drift
     from archlens.config import load_config
@@ -384,6 +538,14 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {"name": "archlens_cdm", "description": "Generate a canonical data model from Entity/PO/JPA types (single or multi-repo)."},
     {"name": "archlens_data_model", "description": "Generate a standalone basic data-model inventory report."},
     {"name": "archlens_capabilities", "description": "List/refresh the hybrid capability catalog (entry points + curated labels)."},
+    {"name": "archlens_playbook", "description": "Reading path and change playbook for a capability (onboarding)."},
+    {"name": "archlens_explain", "description": "Grounded capability explanation from citations (optional LLM)."},
+    {"name": "archlens_strangler", "description": "Strangler extract slice: programs, tables, jobs, maps."},
+    {"name": "archlens_grain", "description": "Paragraph/PERFORM/method/BMS/COPY fine grain for a capability."},
+    {"name": "archlens_onboard", "description": "90-minute onboarding: context, 10 capabilities, one guided change."},
+    {"name": "archlens_rules", "description": "Candidate IF/EVALUATE/validator rules and source comments."},
+    {"name": "archlens_ops", "description": "JCL/CICS TRANSID/BMS ops overlay."},
+    {"name": "archlens_reading_priority", "description": "Hotspot vs unreachable reading order."},
     {"name": "archlens_schema_drift", "description": "Compare CDM vs Flyway/Liquibase/DDL schema."},
     {"name": "archlens_intents", "description": "Load/validate human architecture intent overlays."},
     {"name": "archlens_traces", "description": "Build API→data and CICS process traces."},

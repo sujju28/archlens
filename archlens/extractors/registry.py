@@ -7,6 +7,7 @@ from pathlib import Path
 from archlens.config import ArchLensConfig
 from archlens.extractors.base import BaseExtractor
 from archlens.extractors.cobol_extractor import CobolExtractor
+from archlens.extractors.bms_extractor import BmsExtractor
 from archlens.extractors.java_extractor import JavaExtractor
 from archlens.extractors.jcl_extractor import JclExtractor
 from archlens.extractors.python_extractor import PythonExtractor
@@ -35,7 +36,7 @@ def detect_languages(repo_path: Path) -> list[str]:
         "java": {".java"},
         "typescript": {".ts", ".tsx", ".jsx"},
         "python": {".py"},
-        "cobol": {".cbl", ".cob", ".cpy", ".dcl"},
+        "cobol": {".cbl", ".cob", ".cpy", ".dcl", ".bms"},
         "jcl": {".jcl", ".proc"},
     }
     for lang, exts in ext_map.items():
@@ -75,6 +76,7 @@ class ExtractorRegistry:
             PythonExtractor(self.config, repo_root),
             CobolExtractor(self.config, repo_root),
             JclExtractor(self.config, repo_root),
+            BmsExtractor(self.config, repo_root),
         ]
 
     def for_file(self, file_path: Path) -> BaseExtractor | None:

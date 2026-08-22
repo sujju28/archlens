@@ -644,6 +644,198 @@ def capabilities_cmd(repo: str | None, refresh: bool, output: str):
     console.print(f"  catalog: {yaml_path}")
 
 
+@cli.command("playbook")
+@click.option("--repo", default=None)
+@click.option("--capability", "capability_id", default=None, help="Capability id, title, or element name")
+@click.option("--limit", default=12, help="Max playbooks when listing all")
+@click.option("--output", default="docs/PLAYBOOKS.md")
+def playbook_cmd(repo: str | None, capability_id: str | None, limit: int, output: str):
+    """Reading path + change recipe for a capability (onboarding / first change)."""
+    from archlens.analysis.playbook import (
+        playbooks_for_catalog,
+        playbooks_markdown,
+        resolve_catalog,
+    )
+
+    root = _repo_path(repo)
+    snap = _store(root).get_latest_snapshot()
+    if not snap:
+        console.print("[red]No snapshot. Run archlens scan first.[/red]")
+        sys.exit(1)
+    catalog = resolve_catalog(snap, root)
+    books = playbooks_for_catalog(
+        snap, catalog, repo=root, limit=1 if capability_id else limit, capability_id=capability_id
+    )
+    if not books:
+        console.print("[yellow]No matching capability. Run archlens scan / capabilities first.[/yellow]")
+        sys.exit(1)
+    project = snap.metadata.get("project_name") or "Architecture"
+    md = books[0].to_markdown() if capability_id and len(books) == 1 else playbooks_markdown(
+        books, project=project
+    )
+    out = Path(output)
+    if not out.is_absolute():
+        out = root / out
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(md, encoding="utf-8")
+    console.print(f"[green]Playbook written to[/green] {out}")
+    for pb in books[:5]:
+        console.print(f"  - {pb.title} ({len(pb.reading_path)} files, risk {pb.risk_score})")
+
+
+@cli.command("explain")
+@click.option("--repo", default=None)
+@click.option("--capability", "capability_id", required=True, help="Capability id, title, or element name")
+@click.option("--output", default=None)
+@click.option("--no-llm", is_flag=True, default=False, help="Skip optional LLM; citations-only template")
+def explain_cmd(repo: str | None, capability_id: str, output: str | None, no_llm: bool):
+    """Grounded explanation from file citations (optional LLM, never unsourced)."""
+    from archlens.analysis.explain import explain_capability
+    from archlens.analysis.playbook import match_capability, resolve_catalog
+
+    root = _repo_path(repo)
+    snap = _store(root).get_latest_snapshot()
+    if not snap:
+        console.print("[red]No snapshot. Run archlens scan first.[/red]")
+        sys.exit(1)
+    cap = match_capability(resolve_catalog(snap, root), capability_id)
+    if not cap:
+        console.print(f"[yellow]No capability matching `{capability_id}`.[/yellow]")
+        sys.exit(1)
+    expl = explain_capability(snap, cap, repo=root, use_llm=not no_llm)
+    md = expl.to_markdown()
+    if output:
+        _write_md(root, output, md)
+        console.print(f"[green]Wrote[/green] {output if Path(output).is_absolute() else root / output}")
+        console.print(f"  llm_used={expl.llm_used} citations={len(expl.citations)}")
+    else:
+        console.print(md)
+
+
+@cli.command("strangler")
+@click.option("--repo", default=None)
+@click.option("--capability", "capability_id", required=True)
+@click.option("--output", default="docs/STRANGLER.md")
+def strangler_cmd(repo: str | None, capability_id: str, output: str):
+    """Programs + tables + jobs to extract for one capability (strangler slice)."""
+    from archlens.analysis.playbook import match_capability, resolve_catalog
+    from archlens.analysis.strangler import strangler_slice
+
+    root, snap, cap = _cap_or_exit(repo, capability_id)
+    slice_ = strangler_slice(
+        snap,
+        capability_id=cap.id,
+        title=cap.title or cap.id,
+        seed_names=list(cap.elements),
+        related_tables=list(cap.related_tables),
+    )
+    out = _write_md(root, output, slice_.to_markdown())
+    console.print(f"[green]Strangler slice[/green] {out}")
+    console.print(f"  programs={len(slice_.programs)} tables={len(slice_.tables)} jobs={len(slice_.jobs)}")
+
+
+@cli.command("grain")
+@click.option("--repo", default=None)
+@click.option("--capability", "capability_id", required=True)
+@click.option("--output", default="docs/FINE_GRAIN.md")
+def grain_cmd(repo: str | None, capability_id: str, output: str):
+    """Paragraph / PERFORM / method / BMS field / COPY grain for a capability."""
+    from archlens.analysis.fine_grain import fine_grain_for
+    from archlens.models import is_code_level
+
+    root, snap, cap = _cap_or_exit(repo, capability_id)
+    by_name = {e.name: e for e in snap.elements if not is_code_level(e)}
+    seeds = [by_name[n] for n in cap.elements if n in by_name]
+    report = fine_grain_for(snap, seeds, repo=root, capability_id=cap.id)
+    out = _write_md(root, output, report.to_markdown())
+    console.print(f"[green]Fine grain[/green] {out}")
+
+
+@cli.command("onboard")
+@click.option("--repo", default=None)
+@click.option("--capability", "capability_id", default=None, help="Guided first change (default: top capability)")
+@click.option("--output", default="docs/ONBOARDING.md")
+def onboard_cmd(repo: str | None, capability_id: str | None, output: str):
+    """First 90 minutes: context diagram, 10 capabilities, one guided change."""
+    from archlens.analysis.onboard import onboard_markdown
+    from archlens.analysis.playbook import resolve_catalog
+
+    root = _repo_path(repo)
+    snap = _store(root).get_latest_snapshot()
+    if not snap:
+        console.print("[red]No snapshot. Run archlens scan first.[/red]")
+        sys.exit(1)
+    md = onboard_markdown(snap, resolve_catalog(snap, root), repo=root, capability_id=capability_id)
+    out = _write_md(root, output, md)
+    console.print(f"[green]Onboarding guide[/green] {out}")
+
+
+@cli.command("rules")
+@click.option("--repo", default=None)
+@click.option("--capability", "capability_id", required=True)
+@click.option("--output", default="docs/RULES.md")
+def rules_cmd(repo: str | None, capability_id: str, output: str):
+    """Candidate IF/EVALUATE/validator rules under a capability (not a BRD)."""
+    from archlens.analysis.source_harvest import harvest_for_elements
+    from archlens.models import is_code_level
+
+    root, snap, cap = _cap_or_exit(repo, capability_id)
+    by_name = {e.name: e for e in snap.elements if not is_code_level(e)}
+    seeds = [by_name[n] for n in cap.elements if n in by_name]
+    h = harvest_for_elements(snap, seeds, root)
+    lines = [f"# Candidate rules: {cap.title}", "", "Human-named checklist of logic that exists in code.", ""]
+    for r in h.rules:
+        lines.append(f"- **{r.kind}** `{r.text}` — `{r.citation}`")
+    if h.comments:
+        lines.extend(["", "## Comments / remarks", ""])
+        for c in h.comments:
+            lines.append(f"- [{c.kind}] {c.text} (`{c.citation}`)")
+    if not h.rules and not h.comments:
+        lines.append("_None harvested._")
+    out = _write_md(root, output, "\n".join(lines) + "\n")
+    console.print(f"[green]Rules[/green] {out} ({len(h.rules)} candidates)")
+
+
+@cli.command("ops")
+@click.option("--repo", default=None)
+@click.option("--capability", "capability_id", default=None)
+@click.option("--output", default="docs/OPS_OVERLAY.md")
+def ops_cmd(repo: str | None, capability_id: str | None, output: str):
+    """JCL job names, CICS TRANSID, BMS maps (ops overlay, not APM)."""
+    from archlens.analysis.ops_overlay import ops_overlay
+    from archlens.analysis.playbook import match_capability, resolve_catalog
+
+    root = _repo_path(repo)
+    snap = _store(root).get_latest_snapshot()
+    if not snap:
+        console.print("[red]No snapshot. Run archlens scan first.[/red]")
+        sys.exit(1)
+    seeds = None
+    if capability_id:
+        cap = match_capability(resolve_catalog(snap, root), capability_id)
+        if cap:
+            seeds = list(cap.elements)
+    overlay = ops_overlay(snap, repo=root, seed_names=seeds)
+    out = _write_md(root, output, overlay.to_markdown())
+    console.print(f"[green]Ops overlay[/green] {out}")
+
+
+@cli.command("reading-priority")
+@click.option("--repo", default=None)
+@click.option("--output", default="docs/READING_PRIORITY.md")
+def reading_priority_cmd(repo: str | None, output: str):
+    """Hotspots to learn first vs unreachable / isolated code to skip."""
+    from archlens.analysis.reading_priority import reading_priority
+
+    root = _repo_path(repo)
+    snap = _store(root).get_latest_snapshot()
+    if not snap:
+        console.print("[red]No snapshot. Run archlens scan first.[/red]")
+        sys.exit(1)
+    out = _write_md(root, output, reading_priority(snap).to_markdown())
+    console.print(f"[green]Reading priority[/green] {out}")
+
+
 @cli.command("schema-drift")
 @click.option("--repo", default=None)
 @click.option("--output", default="docs/SCHEMA_CDM_DRIFT.md")
@@ -840,6 +1032,30 @@ def federate_cmd(url: str, output: str | None):
         f"Remote elements: {len(data.get('elements', []))} | "
         f"relationships: {len(data.get('relationships', []))}"
     )
+
+
+def _write_md(root: Path, output: str, text: str) -> Path:
+    out = Path(output)
+    if not out.is_absolute():
+        out = root / out
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text, encoding="utf-8")
+    return out
+
+
+def _cap_or_exit(repo: str | None, capability_id: str):
+    from archlens.analysis.playbook import match_capability, resolve_catalog
+
+    root = _repo_path(repo)
+    snap = _store(root).get_latest_snapshot()
+    if not snap:
+        console.print("[red]No snapshot. Run archlens scan first.[/red]")
+        sys.exit(1)
+    cap = match_capability(resolve_catalog(snap, root), capability_id)
+    if not cap:
+        console.print(f"[yellow]No capability matching `{capability_id}`.[/yellow]")
+        sys.exit(1)
+    return root, snap, cap
 
 
 def _resolve_snapshot(store: SQLiteStore, ref: str):

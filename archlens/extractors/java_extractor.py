@@ -13,6 +13,7 @@ from archlens.extractors.base import (
     BaseExtractor,
 )
 from archlens.extractors.entity_metadata import parse_entity_metadata
+from archlens.extractors.member_list import java_public_methods
 from archlens.models import ArchElement, ArchRelationship, RelType
 
 
@@ -196,6 +197,10 @@ class JavaExtractor(BaseExtractor):
             if stereotype == "Entity" or re.match(r"^[IX]_", name):
                 stereotype = "Entity"
                 metadata = parse_entity_metadata(name, text, annotations, language="java")
+            methods = java_public_methods(text, name)
+            if methods:
+                metadata = dict(metadata)
+                metadata["methods"] = methods
 
             eid = f"{package}.{name}" if package else self.make_id(name, file_path)
             elements.append(
@@ -266,6 +271,10 @@ class JavaExtractor(BaseExtractor):
                 if stereotype == "Entity" or re.match(r"^[IX]_", name):
                     stereotype = "Entity"
                     metadata = parse_entity_metadata(name, text, annotations, language="java")
+                methods = java_public_methods(text, name)
+                if methods:
+                    metadata = dict(metadata)
+                    metadata["methods"] = methods
                 eid = f"{package}.{name}" if package else self.make_id(name, file_path)
                 elements.append(
                     ArchElement(

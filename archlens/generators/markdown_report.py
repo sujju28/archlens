@@ -410,6 +410,12 @@ class MarkdownReportGenerator:
         if len(catalog.capabilities) > len(shown):
             lines.append(f"- _…and {len(catalog.capabilities) - len(shown)} more_")
         lines.append("")
+        lines.append(
+            "For a first change: `archlens onboard`, "
+            "`archlens playbook --capability <id>`, "
+            "`archlens explain --capability <id>`."
+        )
+        lines.append("")
         return lines
 
     def _entry_points(

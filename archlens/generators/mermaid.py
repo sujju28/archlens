@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from archlens.models import ArchElement, ArchRelationship, ArchSnapshot
+from archlens.models import ArchElement, ArchRelationship, ArchSnapshot, is_code_level
 
 # Stay well under Mermaid's secure default (500). Preview hosts often fail at
 # edges.length === maxEdges when adding the next edge, and some VS Code
@@ -59,8 +59,13 @@ class MermaidGenerator:
         return self._component(snapshot, highlight)
 
     def _component(self, snapshot: ArchSnapshot, highlight: set[str]) -> str:
-        by_id = {e.id: e for e in snapshot.elements}
-        selected = self._select_relationships(snapshot.relationships, by_id)
+        by_id = {e.id: e for e in snapshot.elements if not is_code_level(e)}
+        component_rels = [
+            r
+            for r in snapshot.relationships
+            if r.source_id in by_id and r.target_id in by_id
+        ]
+        selected = self._select_relationships(component_rels, by_id)
         kept_ids = {r.source_id for r in selected} | {r.target_id for r in selected}
         for el in snapshot.elements:
             if el.name in highlight or el.id in highlight:

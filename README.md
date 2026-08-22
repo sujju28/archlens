@@ -15,6 +15,13 @@ ArchLens treats architecture as **data extracted from code** using tree-sitter A
 - **Schema ↔ CDM drift** — triangulate inferred entities against Flyway/Liquibase/DDL (`archlens schema-drift`)
 - **Intent overlays** — versioned `.archlens/intents.yaml` for owners, forbidden edges, critical paths, domain boundaries
 - **Capabilities catalog** — scan auto-seeds `.archlens/capabilities.yaml` from entry points; teams curate titles/owners (`archlens capabilities`)
+- **Playbooks / explain** — reading path, blast radius, tests, plus grounded explain from citations (`archlens playbook`, `archlens explain`; optional LLM via `OPENAI_API_KEY` / `ARCHLENS_LLM_API_KEY`)
+- **Comments & candidate rules** — Javadoc/remarks and IF/EVALUATE/validators listed per capability (`archlens rules`)
+- **Fine grain** — COBOL paragraphs/PERFORM, Java/Python methods, BMS fields, COPY usage (`archlens grain`)
+- **Strangler slice** — programs + tables + jobs + maps to extract together (`archlens strangler`)
+- **Reading priority** — hotspots to learn first vs isolated/unreachable (`archlens reading-priority`)
+- **Ops overlay** — JCL jobs/steps, CICS TRANSID, BMS maps (`archlens ops`)
+- **Onboarding mode** — 90-minute path: context → 10 capabilities → one guided change (`archlens onboard`)
 - **Process traces & domains** — API→data / CICS behavioral traces and bounded-context slicing
 - **Timeline narratives** — human-readable architectural change stories between snapshots
 - **Drift detection** — compare current code against the last snapshot
@@ -43,6 +50,14 @@ archlens cdm --output docs/CANONICAL_DATA_MODEL.md
 # archlens cdm --input billing.json --input orders.json --name Shop --output docs/CDM.md
 archlens data-model --output docs/BASIC_DATA_MODEL.md
 archlens capabilities --output docs/CAPABILITIES.md
+archlens playbook --capability UserController --output docs/PLAYBOOKS.md
+archlens explain --capability UserController --no-llm
+archlens onboard --output docs/ONBOARDING.md
+archlens strangler --capability UserController
+archlens grain --capability UserController
+archlens rules --capability UserController
+archlens ops
+archlens reading-priority
 archlens schema-drift --output docs/SCHEMA_CDM_DRIFT.md
 archlens traces --output docs/PROCESS_TRACES.md
 archlens domains --output docs/DOMAINS.md
@@ -70,7 +85,7 @@ archlens mcp                       # stdio MCP server (default for editors)
 | VS Code | `.vscode/settings.json`, `.vscode/mcp.json` | VS Code MCP hosts |
 | Antigravity | `.agents/skills/archlens/SKILL.md`, plugin under `archlens-plugin/` | MCP + skills |
 
-MCP tools: `archlens_scan`, `archlens_query`, `archlens_impact`, `archlens_drift`, `archlens_diagram`, `archlens_report`, `archlens_cdm`, `archlens_data_model`, `archlens_capabilities`, `archlens_schema_drift`, `archlens_intents`, `archlens_traces`, `archlens_domains`, `archlens_timeline`, `archlens_health`, …
+MCP tools: `archlens_scan`, `archlens_query`, `archlens_impact`, `archlens_drift`, `archlens_diagram`, `archlens_report`, `archlens_cdm`, `archlens_data_model`, `archlens_capabilities`, `archlens_playbook`, `archlens_explain`, `archlens_strangler`, `archlens_grain`, `archlens_onboard`, `archlens_rules`, `archlens_ops`, `archlens_reading_priority`, `archlens_schema_drift`, `archlens_intents`, `archlens_traces`, `archlens_domains`, `archlens_timeline`, `archlens_health`, …
 
 Interactive agent (CLI fallback if Antigravity SDK is absent):
 
@@ -101,6 +116,14 @@ archlens agent --repo . --cli
 | `archlens cdm` | Generate CDM (tables/columns/FKs); supports `--input` multi-repo + `.archlens/cdm.yaml` semantics |
 | `archlens data-model` | Standalone basic data-model inventory (no full ER) |
 | `archlens capabilities` | Hybrid capability catalog (scan-seeded, human-curated labels) |
+| `archlens playbook` | Reading path + change recipe for a capability |
+| `archlens explain` | Grounded explanation from citations (optional LLM) |
+| `archlens onboard` | 90-minute onboarding guide |
+| `archlens strangler` | Extract slice (programs/tables/jobs/maps) |
+| `archlens grain` | Paragraph/PERFORM/method/BMS/COPY grain |
+| `archlens rules` | Candidate rules + comments as documentation |
+| `archlens ops` | JCL / CICS TRANSID / BMS overlay |
+| `archlens reading-priority` | Hotspots vs skip/unreachable |
 | `archlens schema-drift` | Compare CDM vs Flyway/Liquibase/DDL |
 | `archlens intents` | Validate `.archlens/intents.yaml` overlays |
 | `archlens traces` | Behavioral API→data / CICS process traces |

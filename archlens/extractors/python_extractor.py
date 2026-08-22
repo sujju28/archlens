@@ -15,6 +15,7 @@ from archlens.extractors.base import (
     BaseExtractor,
 )
 from archlens.extractors.entity_metadata import parse_entity_metadata
+from archlens.extractors.member_list import python_methods
 from archlens.models import ArchElement, ArchRelationship, RelType
 
 
@@ -169,6 +170,10 @@ class PythonExtractor(BaseExtractor):
                         metadata = parse_entity_metadata(
                             name, class_text, decorators, language="python"
                         )
+                methods = python_methods(class_text)
+                if methods:
+                    metadata = dict(metadata)
+                    metadata["methods"] = methods
                 elements.append(
                     ArchElement(
                         id=self.make_id(name, file_path),
@@ -287,6 +292,10 @@ class PythonExtractor(BaseExtractor):
                         metadata = parse_entity_metadata(
                             node.name, class_text, decorators, language="python"
                         )
+                methods = python_methods(class_text)
+                if methods:
+                    metadata = dict(metadata)
+                    metadata["methods"] = methods
                 elements.append(
                     ArchElement(
                         id=self.make_id(node.name, file_path),

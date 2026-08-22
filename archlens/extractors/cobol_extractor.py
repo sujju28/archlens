@@ -9,12 +9,16 @@ import re
 from pathlib import Path
 
 from archlens.extractors.base import BaseExtractor
+from archlens.extractors.cobol_paragraphs import (
+    cobol_remarks,
+    extract_paragraphs_and_performs,
+)
 from archlens.extractors.entity_metadata import (
     merge_entity_metadata,
     parse_cobol_data_metadata,
 )
 from archlens.extractors.mainframe_stereotype import infer_mainframe_stereotype
-from archlens.models import ArchElement, ArchRelationship, RelType
+from archlens.models import ArchElement, ArchRelationship, RelType, C4Level
 
 _PROGRAM_ID = re.compile(
     r"PROGRAM-ID\s*\.\s*([A-Z0-9][\w-]*)\s*\.?",
@@ -127,6 +131,9 @@ class CobolExtractor(BaseExtractor):
             program_name = file_path.stem.upper()
 
         analysis = self._analyze(text, is_copybook=is_copybook)
+        remarks = cobol_remarks(raw)
+        if remarks:
+            analysis["remarks"] = remarks
         override = self.config.mainframe_stereotype_override(program_name)
         stereotype = infer_mainframe_stereotype(analysis, override=override)
 
@@ -154,6 +161,8 @@ class CobolExtractor(BaseExtractor):
             "tables_read": analysis.get("tables_read", []),
             "tables_written": analysis.get("tables_written", []),
             "maps": analysis.get("maps", []),
+            "paragraphs": analysis.get("paragraphs", []),
+            "remarks": analysis.get("remarks", []),
         }
         if is_dclgen:
             metadata = merge_entity_metadata(metadata, dcl_meta)
@@ -188,6 +197,22 @@ class CobolExtractor(BaseExtractor):
                     language="db2",
                     file_path=rel,
                     metadata=tmeta,
+                )
+            )
+
+        for para in analysis.get("paragraphs", [])[:30]:
+            elements.append(
+                ArchElement(
+                    id=f"cobol.{program_name}.para.{para}",
+                    name=para,
+                    stereotype="Component",
+                    c4_level=C4Level.CODE.value,
+                    language="cobol",
+                    file_path=rel,
+                    metadata={
+                        "kind": "paragraph",
+                        "program": program_name,
+                    },
                 )
             )
 
@@ -267,6 +292,18 @@ class CobolExtractor(BaseExtractor):
             add(f"db2.{table}", RelType.WRITES_TABLE.value, f"EXEC SQL WRITE {table}", "DB2")
         for map_name in analysis.get("maps", []):
             add(f"bms.{map_name}", RelType.USES_MAP.value, f"CICS MAP {map_name}", "BMS")
+        for para in analysis.get("paragraphs", [])[:30]:
+            add(f"{src_id}.para.{para}", RelType.COMPOSES.value, f"paragraph {para}", "COBOL")
+        for src_p, tgt_p in analysis.get("performs", []):
+            rels.append(
+                ArchRelationship(
+                    source_id=f"{src_id}.para.{src_p}",
+                    target_id=f"{src_id}.para.{tgt_p}",
+                    rel_type=RelType.PERFORMS.value,
+                    description=f"PERFORM {tgt_p}",
+                    technology="COBOL",
+                )
+            )
 
         return rels
 
@@ -298,6 +335,10 @@ class CobolExtractor(BaseExtractor):
             for t in (m.group(1).upper().split(".")[-1] for m in _SQL_INTO.finditer(text))
             if t not in _SQL_NON_TABLES and len(t) > 2
         ]
+        paragraphs: list[str] = []
+        performs: list[tuple[str, str]] = []
+        if not is_copybook:
+            paragraphs, performs = extract_paragraphs_and_performs(text)
 
         return {
             "is_copybook": is_copybook,
@@ -317,6 +358,8 @@ class CobolExtractor(BaseExtractor):
             "tables_read": sorted(set(tables_read)),
             "tables_written": sorted(set(tables_written)),
             "maps": sorted(set(send_maps + recv_maps)),
+            "paragraphs": paragraphs,
+            "performs": performs,
         }
 
 

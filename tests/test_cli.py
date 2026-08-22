@@ -26,6 +26,8 @@ def test_cli_init_and_scan(tmp_path):
     result = runner.invoke(cli, ["init", "--repo", str(tmp_path)])
     assert result.exit_code == 0
     assert (tmp_path / ".archlens").exists()
+    assert (tmp_path / ".cursor" / "skills" / "archlens-onboard" / "SKILL.md").exists()
+    assert (tmp_path / ".cursor" / "mcp.json").exists()
 
     result = runner.invoke(cli, ["scan", "--repo", str(tmp_path), "--commit", "abc"])
     assert result.exit_code == 0

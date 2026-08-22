@@ -81,6 +81,10 @@ def test_setup_ai_all_platforms(tmp_path: Path):
     assert ".github/copilot-instructions.md" in paths
     assert ".cursorrules" in paths
     assert ".cursor/mcp.json" in paths
+    assert ".cursor/rules/archlens.mdc" in paths
+    assert ".cursor/skills/archlens-onboard/SKILL.md" in paths
+    assert ".cursor/skills/archlens-architect/SKILL.md" in paths
+    assert ".claude/skills/archlens-change/SKILL.md" in paths
     assert ".windsurfrules" in paths
     assert ".windsurf/mcp.json" in paths
     assert ".vscode/settings.json" in paths
@@ -142,4 +146,5 @@ def test_cli_setup_ai_and_query(tmp_path: Path):
     assert result.exit_code == 0
     assert (tmp_path / "AGENTS.md").exists()
     assert (tmp_path / ".cursor" / "mcp.json").exists()
+    assert (tmp_path / ".cursor" / "skills" / "archlens-onboard" / "SKILL.md").exists()
     assert (tmp_path / ".windsurf" / "mcp.json").exists()

@@ -1,7 +1,7 @@
 {
   "name": "archlens",
   "version": "1.0.0",
-  "description": "Living architecture intelligence — scan, query, diff, and analyze the impact of changes on any codebase (Java, TypeScript/React, Python).",
+  "description": "Living architecture intelligence — MCP, skills, and playbooks for onboarding and change impact (Java, TypeScript, Python, COBOL).",
   "author": "ArchLens",
   "license": "MIT",
   "keywords": ["architecture", "c4-model", "impact-analysis", "living-documentation"]

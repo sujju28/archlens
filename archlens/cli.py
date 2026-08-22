@@ -75,6 +75,11 @@ def init(repo: str | None, lang: str | None):
     console.print(f"  CDM semantics: {cdm_sem_path}")
     console.print(f"  Capabilities: {caps_path}")
     console.print(f"  Database: {default_db_path(root)}")
+    from archlens.setup_ai import generate_adapters
+
+    ai_files = generate_adapters(root, ["cursor"], overwrite=False)
+    if ai_files:
+        console.print("  Cursor MCP + ArchLens skills installed (more IDEs: archlens setup-ai)")
 
 
 @cli.command()

@@ -35,6 +35,9 @@ archlens = "archlens.cli:cli"
 [tool.hatch.build.targets.wheel]
 packages = ["archlens"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"archlens/skills" = "archlens/skills"
+
 [tool.hatch.build]
 include = [
   "archlens/**",

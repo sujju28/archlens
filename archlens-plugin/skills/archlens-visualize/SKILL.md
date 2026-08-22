@@ -1,12 +1,11 @@
 ---
 name: archlens-visualize
 description: >-
-  Generate Mermaid/Structurizr diagrams and ARCHITECTURE.md reports from the latest snapshot.
+  Generates ArchLens Mermaid/Structurizr diagrams and ARCHITECTURE.md.
+  Use when the user asks for a diagram, C4 view, or architecture report.
 ---
 
-# ArchLens Visualize Skill
+# ArchLens visualize
 
-```bash
-python <skill_dir>/scripts/generate_diagram.py --repo-path <repo_root> --level component --format mermaid
-python <skill_dir>/scripts/generate_report.py --repo-path <repo_root> --output docs/ARCHITECTURE.md
-```
+MCP `archlens_diagram` (`level`: context|container|component) and `archlens_report`.
+Do not hand-draw architecture that contradicts the snapshot.

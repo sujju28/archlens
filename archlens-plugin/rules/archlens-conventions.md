@@ -1,10 +1,8 @@
 # ArchLens Conventions
 
-Use ArchLens when the user asks about architecture, dependencies, impact of changes,
-diagrams, or documentation freshness.
+Use ArchLens MCP (`archlens_*`) or the `archlens` CLI. Do not invent architecture.
 
-Workflow:
-1. Ensure a fresh scan (`archlens scan` or MCP `archlens_scan`)
-2. Prefer MCP tools when available; otherwise call the CLI / helper scripts
-3. Always explain WHY components are affected (dependency chains)
-4. Be conservative with effort estimates
+1. Fresh scan if `.archlens/` or snapshot is missing/stale
+2. Onboard / playbook / explain / impact for changes
+3. Cite dependency chains (WHY)
+4. Candidate rules and tests are heuristics — say so

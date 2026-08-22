@@ -66,24 +66,38 @@ archlens impact --files path/to/changed/file.py
 archlens drift --fail-on-change
 ```
 
-## IDE / AI assistant setup (Phase 2)
+## IDE / AI assistant setup
 
-ArchLens exposes a universal **MCP** server used by Claude Code, GitHub Copilot, Cursor, Windsurf, VS Code, and Antigravity.
+Skills and the Architect workflow **ship in ArchLens**. On a target repo you only enable them:
 
 ```bash
-pip install -e .
-archlens setup-ai --platform vscode,antigravity
-archlens mcp                       # stdio MCP server (default for editors)
+pip install -e /path/to/archlens   # or pip install archlens
+cd /path/to/your/app
+archlens init                      # also installs Cursor MCP + skills
+# all IDEs:
+archlens setup-ai --platform all --overwrite
+archlens mcp                       # stdio MCP (editors start this via mcp.json)
 ```
+
+`setup-ai` copies packaged skills into **your app repo**:
+
+- `.cursor/skills/archlens-*` (Cursor)
+- `.claude/skills/archlens-*` (Claude Code)
+- `.agents/skills/archlens-*` (Antigravity)
+- MCP: `.cursor/mcp.json`, `.claude/mcp.json`, …
+
+Team members do not write prompts. They ask “what breaks if I change COACTUPC?” and the project skills route to MCP.
 
 | IDE / Host | Adapter files | MCP registration |
 |------------|---------------|------------------|
-| Claude Code | `AGENTS.md`, `.claude/mcp.json` | `archlens mcp` |
+| Claude Code | `AGENTS.md`, `.claude/mcp.json`, `.claude/skills/` | `archlens mcp` |
 | GitHub Copilot | `.github/copilot-instructions.md`, `.vscode/settings.json` | Copilot MCP servers |
-| Cursor | `.cursorrules`, `.cursor/mcp.json` | Cursor MCP |
+| Cursor | `.cursorrules`, `.cursor/rules/archlens.mdc`, `.cursor/mcp.json`, `.cursor/skills/` | Cursor MCP |
 | Windsurf | `.windsurfrules`, `.windsurf/mcp.json` | Windsurf MCP |
 | VS Code | `.vscode/settings.json`, `.vscode/mcp.json` | VS Code MCP hosts |
-| Antigravity | `.agents/skills/archlens/SKILL.md`, plugin under `archlens-plugin/` | MCP + skills |
+| Antigravity | `.agents/skills/`, plugin under `archlens-plugin/` | MCP + skills |
+
+Canonical skill source (this repo): `archlens/skills/`. Named jobs: **scan**, **onboard**, **change**, **impact**, **data**, **legacy**, **drift**, plus **architect** routing.
 
 MCP tools: `archlens_scan`, `archlens_query`, `archlens_impact`, `archlens_drift`, `archlens_diagram`, `archlens_report`, `archlens_cdm`, `archlens_data_model`, `archlens_capabilities`, `archlens_playbook`, `archlens_explain`, `archlens_strangler`, `archlens_grain`, `archlens_onboard`, `archlens_rules`, `archlens_ops`, `archlens_reading_priority`, `archlens_schema_drift`, `archlens_intents`, `archlens_traces`, `archlens_domains`, `archlens_timeline`, `archlens_health`, …
 
@@ -97,8 +111,9 @@ archlens agent --repo . --cli
 
 | Command | Description |
 |---------|-------------|
-| `archlens init` | Initialize `.archlens/` in a repo |
+| `archlens init` | Initialize `.archlens/` plus Cursor MCP and skills |
 | `archlens scan` | Parse codebase → create snapshot |
+| `archlens setup-ai` | Install MCP adapters and ArchLens skills for IDEs |
 | `archlens diff` | Compare two snapshots |
 | `archlens impact` | Analyze impact of changed files |
 | `archlens diagram` | Generate Mermaid/Structurizr diagrams |
@@ -107,7 +122,6 @@ archlens agent --repo . --cli
 | `archlens drift` | Check for architectural drift |
 | `archlens export` | Export architecture as JSON |
 | `archlens mcp` | Start MCP server for AI assistants / IDEs |
-| `archlens setup-ai` | Generate platform adapter files for all IDEs |
 | `archlens agent` | Interactive architect agent (Antigravity or CLI) |
 | `archlens aggregate` | Merge multi-repo `architecture.json` exports |
 | `archlens events` | Detect Kafka/RabbitMQ/SQS producers & consumers |

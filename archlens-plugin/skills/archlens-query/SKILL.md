@@ -1,19 +1,14 @@
 ---
 name: archlens-query
 description: >-
-  Query the architecture database to answer questions about the codebase structure.
-  Use when the user asks "what depends on X", "show me all services",
-  "what calls UserService", or any question about code organization or dependencies.
+  Queries the ArchLens snapshot (what depends on X, list services, cite a
+  program). Use for structure questions that are not a change playbook or
+  PR impact.
 ---
 
-# ArchLens Query Skill
+# ArchLens query
 
-## Prerequisites
-- A scan must have been run first.
+Prefer MCP `archlens_query` with `repo_path` and `query` (or stereotype/element filters).
+Scan first if there is no snapshot. Cite results; do not invent dependents.
 
-## Helper Scripts
-```bash
-python <skill_dir>/scripts/list_elements.py --repo-path <repo_root> --stereotype Controller
-python <skill_dir>/scripts/show_dependencies.py --repo-path <repo_root> --element UserService --direction upstream
-python <skill_dir>/scripts/query_arch.py --repo-path <repo_root> --query "what depends on UserService"
-```
+Legacy helper scripts under `scripts/` are optional if MCP is unavailable.

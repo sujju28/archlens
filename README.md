@@ -10,6 +10,8 @@ ArchLens treats architecture as **data extracted from code** using tree-sitter A
 - **Mainframe extraction** — COBOL programs (CALL, EXEC CICS, EXEC SQL, COPY), JCL jobs/steps/datasets, behavioral stereotypes (UI / Service / Repository / Batch Job / Shared Data)
 - **SQLite snapshots** — versioned architecture models stored in `.archlens/`
 - **Canonical data model (CDM)** — tables, columns, and FK associations from Java (JPA/`I_*`), TypeScript (TypeORM), Python (SQLAlchemy/dataclass/Pydantic), and COBOL (DB2/DCLGEN) via `archlens cdm`; basic data-model inventory is also included in `archlens report`
+- **Multi-repo / semantic CDM** — aggregate exports into one CDM; `.archlens/cdm.yaml` aliases, same-as, owners, suppress
+- **Standalone basic data model** — `archlens data-model` inventory report (without full ER)
 - **Schema ↔ CDM drift** — triangulate inferred entities against Flyway/Liquibase/DDL (`archlens schema-drift`)
 - **Intent overlays** — versioned `.archlens/intents.yaml` for owners, forbidden edges, critical paths, domain boundaries
 - **Process traces & domains** — API→data / CICS behavioral traces and bounded-context slicing
@@ -36,6 +38,9 @@ archlens scan
 archlens diagram --format mermaid --level component
 archlens report --output docs/ARCHITECTURE.md
 archlens cdm --output docs/CANONICAL_DATA_MODEL.md
+# Multi-repo CDM (after per-repo export):
+# archlens cdm --input billing.json --input orders.json --name Shop --output docs/CDM.md
+archlens data-model --output docs/BASIC_DATA_MODEL.md
 archlens schema-drift --output docs/SCHEMA_CDM_DRIFT.md
 archlens traces --output docs/PROCESS_TRACES.md
 archlens domains --output docs/DOMAINS.md
@@ -63,7 +68,7 @@ archlens mcp                       # stdio MCP server (default for editors)
 | VS Code | `.vscode/settings.json`, `.vscode/mcp.json` | VS Code MCP hosts |
 | Antigravity | `.agents/skills/archlens/SKILL.md`, plugin under `archlens-plugin/` | MCP + skills |
 
-MCP tools: `archlens_scan`, `archlens_query`, `archlens_impact`, `archlens_drift`, `archlens_diagram`, `archlens_report`, `archlens_cdm`, `archlens_schema_drift`, `archlens_intents`, `archlens_traces`, `archlens_domains`, `archlens_timeline`, `archlens_health`, …
+MCP tools: `archlens_scan`, `archlens_query`, `archlens_impact`, `archlens_drift`, `archlens_diagram`, `archlens_report`, `archlens_cdm`, `archlens_data_model`, `archlens_schema_drift`, `archlens_intents`, `archlens_traces`, `archlens_domains`, `archlens_timeline`, `archlens_health`, …
 
 Interactive agent (CLI fallback if Antigravity SDK is absent):
 
@@ -91,7 +96,8 @@ archlens agent --repo . --cli
 | `archlens events` | Detect Kafka/RabbitMQ/SQS producers & consumers |
 | `archlens contracts` | Link services via OpenAPI + HTTP call sites |
 | `archlens health` | Score coupling, cycles, layer violations |
-| `archlens cdm` | Generate CDM (tables/columns/FKs) + basic data-model inventory |
+| `archlens cdm` | Generate CDM (tables/columns/FKs); supports `--input` multi-repo + `.archlens/cdm.yaml` semantics |
+| `archlens data-model` | Standalone basic data-model inventory (no full ER) |
 | `archlens schema-drift` | Compare CDM vs Flyway/Liquibase/DDL |
 | `archlens intents` | Validate `.archlens/intents.yaml` overlays |
 | `archlens traces` | Behavioral API→data / CICS process traces |

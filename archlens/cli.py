@@ -49,8 +49,10 @@ def init(repo: str | None, lang: str | None):
     (arch_dir / ".gitkeep").touch()
     cfg_path = write_default_config(root)
     from archlens.analysis.intents import write_example_intents
+    from archlens.analysis.cdm_semantics import write_example_cdm_semantics
 
     intents_path = write_example_intents(root)
+    cdm_sem_path = write_example_cdm_semantics(root)
     if lang:
         # Update languages in config file lightly
         text = cfg_path.read_text(encoding="utf-8")
@@ -68,6 +70,7 @@ def init(repo: str | None, lang: str | None):
     console.print(f"[green]Initialized ArchLens in[/green] {root}")
     console.print(f"  Config: {cfg_path}")
     console.print(f"  Intents: {intents_path}")
+    console.print(f"  CDM semantics: {cdm_sem_path}")
     console.print(f"  Database: {default_db_path(root)}")
 
 
@@ -501,19 +504,47 @@ def contracts_cmd(repo: str | None, repos: str | None, output: str | None):
 
 @cli.command("cdm")
 @click.option("--repo", default=None)
+@click.option("--input", "inputs", multiple=True, help="architecture.json paths for multi-repo CDM")
+@click.option("--name", default="Distributed System", help="System name when using --input")
+@click.option("--semantics", "semantics_path", default=None, help="Path to .archlens/cdm.yaml")
 @click.option("--output", default="docs/CANONICAL_DATA_MODEL.md")
 @click.option("--json-output", default=None, help="Also write machine-readable CDM JSON")
-def cdm_cmd(repo: str | None, output: str, json_output: str | None):
-    """Generate a canonical data model from Entity / PO / JPA types."""
-    from archlens.analysis.data_model import build_canonical_data_model
+def cdm_cmd(
+    repo: str | None,
+    inputs: tuple[str, ...],
+    name: str,
+    semantics_path: str | None,
+    output: str,
+    json_output: str | None,
+):
+    """Generate a canonical data model (single repo or aggregated exports)."""
+    from archlens.analysis.cdm_semantics import load_cdm_semantics, write_example_cdm_semantics
+    from archlens.analysis.data_model import (
+        build_canonical_data_model,
+        build_cdm_from_exports,
+    )
     from archlens.generators.cdm_report import CdmReportGenerator
 
     root = _repo_path(repo)
-    snapshot = _store(root).get_latest_snapshot()
-    if not snapshot:
-        console.print("[red]No snapshot. Run archlens scan first.[/red]")
-        sys.exit(1)
-    cdm = build_canonical_data_model(snapshot)
+    sem_path = Path(semantics_path) if semantics_path else None
+    # Ensure example semantics file exists for discoverability
+    write_example_cdm_semantics(root)
+    semantics = load_cdm_semantics(repo=root, path=sem_path)
+
+    if inputs:
+        snapshot, cdm = build_cdm_from_exports(
+            list(inputs), system_name=name, semantics=semantics
+        )
+        console.print(f"[green]Aggregated CDM from[/green] {len(inputs)} exports")
+    else:
+        snapshot = _store(root).get_latest_snapshot()
+        if not snapshot:
+            console.print("[red]No snapshot. Run archlens scan first (or pass --input).[/red]")
+            sys.exit(1)
+        cdm = build_canonical_data_model(
+            snapshot, semantics=semantics, repo=root, semantics_path=sem_path
+        )
+
     md = CdmReportGenerator().generate(snapshot, cdm)
     out = Path(output)
     if not out.is_absolute():
@@ -524,7 +555,8 @@ def cdm_cmd(repo: str | None, output: str, json_output: str | None):
     console.print(
         f"  entities={cdm.stats.get('entity_count')} "
         f"associations={cdm.stats.get('association_count')} "
-        f"columns={cdm.stats.get('columns_total')}"
+        f"columns={cdm.stats.get('columns_total')} "
+        f"owned={cdm.stats.get('owned_entities')}"
     )
     if json_output:
         jout = Path(json_output)
@@ -533,6 +565,33 @@ def cdm_cmd(repo: str | None, output: str, json_output: str | None):
         jout.parent.mkdir(parents=True, exist_ok=True)
         jout.write_text(json.dumps(cdm.to_dict(), indent=2), encoding="utf-8")
         console.print(f"[green]CDM JSON written to[/green] {jout}")
+
+
+@cli.command("data-model")
+@click.option("--repo", default=None)
+@click.option("--input", "inputs", multiple=True, help="architecture.json paths (optional aggregate)")
+@click.option("--name", default="Distributed System")
+@click.option("--output", default="docs/BASIC_DATA_MODEL.md")
+def data_model_cmd(repo: str | None, inputs: tuple[str, ...], name: str, output: str):
+    """Write a standalone basic data-model inventory (not full CDM/ER)."""
+    from archlens.analysis.data_model import basic_data_model_markdown
+    from archlens.distributed.aggregator import aggregate_from_paths
+
+    root = _repo_path(repo)
+    if inputs:
+        snapshot = aggregate_from_paths(list(inputs), system_name=name)
+    else:
+        snapshot = _store(root).get_latest_snapshot()
+        if not snapshot:
+            console.print("[red]No snapshot. Run archlens scan first.[/red]")
+            sys.exit(1)
+    md = basic_data_model_markdown(snapshot)
+    out = Path(output)
+    if not out.is_absolute():
+        out = root / out
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(md, encoding="utf-8")
+    console.print(f"[green]Basic data model written to[/green] {out}")
 
 
 @cli.command("schema-drift")

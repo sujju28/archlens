@@ -29,8 +29,11 @@ class CdmReportGenerator:
             "",
             "This CDM is **inferred from code** across stacks: JPA/`I_*` (Java), "
             "TypeORM `@Entity` (TypeScript), SQLAlchemy/dataclass/Pydantic (Python), "
-            "and DB2/DCLGEN (COBOL). It is a logical view of tables, columns, and "
-            "FK-style associations — not a substitute for DDL or the AD dictionary.",
+            "and DB2/DCLGEN (COBOL). Optional `.archlens/cdm.yaml` overlays add "
+            "aliases, same-as merges, and ownership. Multi-repo CDM uses "
+            "`archlens cdm --input a.json --input b.json`. "
+            "It is a logical view of tables, columns, and FK-style associations — "
+            "not a substitute for DDL or an MDM dictionary.",
             "",
             "## Summary",
             "",
@@ -41,6 +44,24 @@ class CdmReportGenerator:
             f"- **Languages:** {cdm.stats.get('languages', {})}",
             "",
         ]
+
+        if cdm.stats.get("aggregated"):
+            lines.append("- **Scope:** multi-repo aggregated CDM")
+            lines.append("")
+        sem = cdm.stats.get("semantics") or {}
+        if any(sem.get(k) for k in ("alias_rules", "same_as_groups", "owners", "suppress")):
+            lines.extend(
+                [
+                    "### Semantic overlays",
+                    "",
+                    f"- Alias rules: {sem.get('alias_rules', 0)}",
+                    f"- Same-as groups: {sem.get('same_as_groups', 0)}",
+                    f"- Owned entities: {cdm.stats.get('owned_entities', 0)} "
+                    f"(of {cdm.stats.get('entity_count', 0)})",
+                    f"- Suppress rules: {sem.get('suppress', 0)}",
+                    "",
+                ]
+            )
 
         basic = cdm.stats.get("basic") or {}
         if basic:
@@ -92,6 +113,18 @@ class CdmReportGenerator:
             lines.append(f"- **Type:** `{ent.name}` ({ent.kind})")
             if ent.language:
                 lines.append(f"- **Language:** `{ent.language}`")
+            if ent.owner:
+                lines.append(f"- **Owner:** {ent.owner}")
+            if ent.aliases:
+                lines.append(
+                    "- **Also known as:** "
+                    + ", ".join(f"`{a}`" for a in ent.aliases[:12])
+                )
+            if ent.source_repos:
+                lines.append(
+                    "- **Source repos:** "
+                    + ", ".join(f"`{r}`" for r in ent.source_repos[:8])
+                )
             if ent.container:
                 lines.append(f"- **Container:** {ent.container}")
             lines.append(f"- **Source:** `{ent.file_path}`")

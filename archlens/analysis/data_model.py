@@ -4,8 +4,15 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
+from archlens.analysis.cdm_semantics import (
+    CdmSemantics,
+    is_suppressed,
+    load_cdm_semantics,
+    resolve_canonical_name,
+)
 from archlens.extractors.entity_metadata import fk_target_table
 from archlens.models import ArchElement, ArchRelationship, ArchSnapshot, RelType
 
@@ -21,6 +28,10 @@ class DataEntity:
     kind: str = "entity"
     language: str = ""
     container: str | None = None
+    owner: str | None = None
+    canonical_name: str | None = None
+    aliases: list[str] = field(default_factory=list)
+    source_repos: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -51,6 +62,10 @@ class CanonicalDataModel:
                     "kind": e.kind,
                     "language": e.language,
                     "container": e.container,
+                    "owner": e.owner,
+                    "canonical_name": e.canonical_name,
+                    "aliases": e.aliases,
+                    "source_repos": e.source_repos,
                 }
                 for e in self.entities
             ],
@@ -144,11 +159,17 @@ def basic_data_model_summary(snapshot: ArchSnapshot) -> dict[str, Any]:
             "writes_dataset",
         )
     ]
-    # Prefer tables that already have column metadata
     sample_tables = [
         {"table": t, "columns": n, "language": lang}
         for t, n, lang in sorted(tables, key=lambda x: (-x[1], x[0].lower()))[:15]
     ]
+    by_repo: Counter[str] = Counter()
+    for e in entities:
+        slug = (e.metadata or {}).get("source_slug") or (e.metadata or {}).get(
+            "source_repo"
+        )
+        if slug:
+            by_repo[str(slug)] += 1
     return {
         "entity_count": len(entities),
         "entities_with_columns": with_columns,
@@ -157,17 +178,81 @@ def basic_data_model_summary(snapshot: ArchSnapshot) -> dict[str, Any]:
         "dataset_count": len(datasets),
         "data_relationships": len(access_rels),
         "entities_by_language": dict(by_lang),
+        "entities_by_repo": dict(by_repo),
         "sample_entities": sorted({e.name for e in entities})[:20],
         "sample_repositories": sorted({e.name for e in repos})[:15],
         "sample_tables": sample_tables,
+        "aggregated": bool((snapshot.metadata or {}).get("aggregated")),
     }
 
 
-def build_canonical_data_model(snapshot: ArchSnapshot) -> CanonicalDataModel:
-    """Build a CDM view from Entity elements in a snapshot."""
-    # Prefer I_* over X_* for the same table (interfaces carry the contract)
-    by_table: dict[str, ArchElement] = {}  # lower(table) → element
-    display_name: dict[str, str] = {}
+def basic_data_model_markdown(snapshot: ArchSnapshot, *, title: str | None = None) -> str:
+    """Standalone basic data-model inventory report."""
+    summary = basic_data_model_summary(snapshot)
+    project = title or snapshot.metadata.get("project_name") or "Data model"
+    lines = [
+        f"# {project} — Basic data model",
+        "",
+        "Inventory of data-facing types extracted from code "
+        "(entities, repositories, shared data / datasets). "
+        "For columns, FKs, and ER diagrams with optional semantic overlays, "
+        "run `archlens cdm`.",
+        "",
+        f"- **Entities:** {summary['entity_count']} "
+        f"({summary['entities_with_columns']} with columns)",
+        f"- **Repositories:** {summary['repository_count']}",
+        f"- **Shared data / datasets:** "
+        f"{summary['shared_data_count']} / {summary['dataset_count']}",
+        f"- **Data relationships:** {summary['data_relationships']}",
+    ]
+    if summary.get("aggregated"):
+        lines.append("- **Scope:** aggregated multi-repo snapshot")
+    if summary.get("entities_by_language"):
+        langs = ", ".join(
+            f"{k}: {v}" for k, v in sorted(summary["entities_by_language"].items())
+        )
+        lines.append(f"- **Entities by language:** {langs}")
+    if summary.get("entities_by_repo"):
+        repos = ", ".join(
+            f"{k}: {v}" for k, v in sorted(summary["entities_by_repo"].items())
+        )
+        lines.append(f"- **Entities by source repo:** {repos}")
+    if summary.get("sample_tables"):
+        shown = []
+        for row in summary["sample_tables"][:12]:
+            label = f"`{row['table']}` ({row['columns']} cols"
+            if row.get("language"):
+                label += f", {row['language']}"
+            label += ")"
+            shown.append(label)
+        lines.append("- **Sample tables:** " + ", ".join(shown))
+    if summary.get("sample_entities"):
+        lines.append(
+            "- **Sample entities:** "
+            + ", ".join(f"`{n}`" for n in summary["sample_entities"][:12])
+        )
+    if summary.get("sample_repositories"):
+        lines.append(
+            "- **Sample repositories:** "
+            + ", ".join(f"`{n}`" for n in summary["sample_repositories"][:10])
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
+def build_canonical_data_model(
+    snapshot: ArchSnapshot,
+    *,
+    semantics: CdmSemantics | None = None,
+    semantics_path: Path | str | None = None,
+    repo: Path | str | None = None,
+) -> CanonicalDataModel:
+    """Build a CDM view from Entity elements; optionally apply semantic overlays."""
+    sem = semantics or load_cdm_semantics(repo=repo, path=semantics_path)
+
+    # physical_key → list of contributing elements (for multi-repo merge)
+    physical: dict[str, list[ArchElement]] = defaultdict(list)
+    physical_display: dict[str, str] = {}
     for e in snapshot.elements:
         if e.stereotype != "Entity":
             continue
@@ -175,46 +260,102 @@ def build_canonical_data_model(snapshot: ArchSnapshot) -> CanonicalDataModel:
         if not table:
             continue
         key = str(table).lower()
-        existing = by_table.get(key)
-        if existing is None:
-            by_table[key] = e
-            display_name[key] = str(table)
+        if is_suppressed(str(table), sem) or is_suppressed(key, sem):
             continue
-        score_new = _entity_score(e)
-        score_old = _entity_score(existing)
-        if score_new > score_old:
-            by_table[key] = e
-            # keep richer column table name if present
-            if (e.metadata or {}).get("table_name"):
-                display_name[key] = str(e.metadata["table_name"])
+        physical[key].append(e)
+        if key not in physical_display or (e.metadata or {}).get("table_name"):
+            physical_display[key] = str(
+                (e.metadata or {}).get("table_name") or physical_display.get(key) or table
+            )
+
+    # Map physical → canonical and merge
+    canonical_buckets: dict[str, list[tuple[str, ArchElement]]] = defaultdict(list)
+    for pkey, els in physical.items():
+        display = physical_display.get(pkey, pkey)
+        # Prefer slug-qualified alias lookup for aggregated snaps
+        for e in els:
+            slug = (e.metadata or {}).get("source_slug")
+            candidates = [display, pkey]
+            if slug:
+                candidates.extend([f"{slug}::{display}", f"{slug}::{pkey}"])
+            canon = display
+            for c in candidates:
+                resolved = resolve_canonical_name(str(c), sem)
+                if resolved != c:
+                    canon = resolved
+                    break
+            else:
+                canon = resolve_canonical_name(display, sem)
+            if is_suppressed(canon, sem):
+                continue
+            canonical_buckets[canon.lower()].append((display, e))
 
     entities: list[DataEntity] = []
-    for key, e in sorted(by_table.items(), key=lambda x: x[0]):
-        meta = e.metadata or {}
-        table = display_name.get(key, key)
+    for ckey, members in sorted(canonical_buckets.items(), key=lambda x: x[0]):
+        # Pick richest element as primary
+        best_el = max((m[1] for m in members), key=_entity_score)
+        alias_names = sorted({m[0] for m in members if m[0].lower() != ckey})
+        # Also include other physical names
+        for m in members:
+            if m[0] not in alias_names and m[0].lower() != ckey:
+                alias_names.append(m[0])
+        alias_names = sorted(set(alias_names), key=str.lower)
+
+        columns: list[str] = []
+        fks: list[str] = []
+        source_repos: list[str] = []
+        for _disp, el in members:
+            meta = el.metadata or {}
+            for col in meta.get("columns") or []:
+                if col not in columns:
+                    columns.append(col)
+            for fk in meta.get("fk_columns") or []:
+                if fk not in fks:
+                    fks.append(fk)
+            slug = meta.get("source_slug") or meta.get("source_repo")
+            if slug and str(slug) not in source_repos:
+                source_repos.append(str(slug))
+
+        # Canonical display name: prefer semantics owners key / same_as canonical casing
+        canon_display = _canonical_display(ckey, members[0][0], sem)
+        owner = None
+        owner_map = {k.lower(): v for k, v in sem.owners.items()}
+        owner = owner_map.get(canon_display.lower()) or owner_map.get(ckey)
+
+        meta = best_el.metadata or {}
         container = meta.get("container") if isinstance(meta.get("container"), str) else None
         entities.append(
             DataEntity(
-                id=e.id,
-                name=e.name,
-                table_name=table,
-                columns=list(meta.get("columns") or []),
-                fk_columns=list(meta.get("fk_columns") or []),
-                file_path=e.file_path,
+                id=best_el.id,
+                name=best_el.name,
+                table_name=canon_display,
+                columns=columns,
+                fk_columns=fks,
+                file_path=best_el.file_path,
                 kind=str(meta.get("kind") or "entity"),
-                language=e.language or str(meta.get("language") or ""),
+                language=best_el.language or str(meta.get("language") or ""),
                 container=container,
+                owner=owner,
+                canonical_name=canon_display,
+                aliases=alias_names,
+                source_repos=source_repos,
             )
         )
 
     table_ids = {e.table_name: e.id for e in entities}
     table_ids_ci = {e.table_name.lower(): e.table_name for e in entities}
+    # Allow FKs to resolve via aliases too
+    for e in entities:
+        for a in e.aliases:
+            table_ids_ci.setdefault(a.lower(), e.table_name)
+
     associations: list[DataAssociation] = []
     seen: set[tuple[str, str, str]] = set()
     for e in entities:
         for fk in e.fk_columns:
             tgt_raw = fk_target_table(fk)
-            tgt = table_ids_ci.get(tgt_raw.lower())
+            tgt_canon = resolve_canonical_name(tgt_raw, sem)
+            tgt = table_ids_ci.get(tgt_canon.lower()) or table_ids_ci.get(tgt_raw.lower())
             if not tgt or tgt == e.table_name:
                 continue
             key = (e.table_name, tgt, fk)
@@ -231,7 +372,6 @@ def build_canonical_data_model(snapshot: ArchSnapshot) -> CanonicalDataModel:
                 )
             )
 
-    # Also harvest REFERENCES from snapshot relationships
     id_to_table = {e.id: e.table_name for e in entities}
     for rel in snapshot.relationships:
         if rel.rel_type != RelType.REFERENCES.value:
@@ -256,9 +396,8 @@ def build_canonical_data_model(snapshot: ArchSnapshot) -> CanonicalDataModel:
         )
 
     kinds = Counter(e.kind for e in entities)
-    lang_counts: Counter[str] = Counter(
-        (e.language or "unknown") for e in entities
-    )
+    lang_counts: Counter[str] = Counter((e.language or "unknown") for e in entities)
+    owned = sum(1 for e in entities if e.owner)
     return CanonicalDataModel(
         entities=entities,
         associations=associations,
@@ -268,9 +407,48 @@ def build_canonical_data_model(snapshot: ArchSnapshot) -> CanonicalDataModel:
             "kinds": dict(kinds),
             "columns_total": sum(len(e.columns) for e in entities),
             "languages": dict(lang_counts),
+            "owned_entities": owned,
+            "aliases_applied": sum(1 for e in entities if e.aliases),
+            "aggregated": bool((snapshot.metadata or {}).get("aggregated")),
+            "semantics": {
+                "alias_rules": len(sem.aliases),
+                "same_as_groups": len(sem.same_as),
+                "owners": len(sem.owners),
+                "suppress": len(sem.suppress),
+            },
             "basic": basic_data_model_summary(snapshot),
         },
     )
+
+
+def build_cdm_from_exports(
+    paths: list[Path | str],
+    *,
+    system_name: str = "Distributed System",
+    semantics: CdmSemantics | None = None,
+    semantics_path: Path | str | None = None,
+) -> tuple[ArchSnapshot, CanonicalDataModel]:
+    """Aggregate architecture JSON exports then build a semantic CDM."""
+    from archlens.distributed.aggregator import aggregate_from_paths
+
+    snap = aggregate_from_paths(list(paths), system_name=system_name)
+    cdm = build_canonical_data_model(
+        snap, semantics=semantics, semantics_path=semantics_path
+    )
+    return snap, cdm
+
+
+def _canonical_display(ckey: str, fallback: str, sem: CdmSemantics) -> str:
+    for group in sem.same_as:
+        if group.canonical.lower() == ckey:
+            return group.canonical
+    for _alias, canon in sem.aliases.items():
+        if canon.lower() == ckey:
+            return canon
+    # Preserve original casing when no overlay
+    if fallback.lower() == ckey:
+        return fallback
+    return fallback if fallback else ckey
 
 
 def _table_from_name(name: str) -> str:

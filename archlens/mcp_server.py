@@ -15,6 +15,7 @@ from archlens.mcp_tools import (
     tool_aggregate,
     tool_cdm,
     tool_contracts,
+    tool_data_model,
     tool_diagram,
     tool_domains,
     tool_drift,
@@ -121,9 +122,36 @@ def run_mcp(transport: str = "stdio", port: int = 8080) -> None:
         return tool_health(repo_path, trends=trends)
 
     @mcp.tool(name="archlens_cdm")
-    def archlens_cdm(repo_path: str, output_path: str | None = None) -> str:
-        """Generate a canonical data model (CDM) from Entity/PO/JPA types."""
-        return tool_cdm(repo_path, output_path=output_path)
+    def archlens_cdm(
+        repo_path: str,
+        output_path: str | None = None,
+        architecture_json_paths: list[str] | None = None,
+        system_name: str = "Distributed System",
+        semantics_path: str | None = None,
+    ) -> str:
+        """Generate a canonical data model (single repo or multi-repo exports + semantics)."""
+        return tool_cdm(
+            repo_path,
+            output_path=output_path,
+            architecture_json_paths=architecture_json_paths,
+            system_name=system_name,
+            semantics_path=semantics_path,
+        )
+
+    @mcp.tool(name="archlens_data_model")
+    def archlens_data_model(
+        repo_path: str,
+        output_path: str | None = None,
+        architecture_json_paths: list[str] | None = None,
+        system_name: str = "Distributed System",
+    ) -> str:
+        """Generate a standalone basic data-model inventory (not full CDM/ER)."""
+        return tool_data_model(
+            repo_path,
+            output_path=output_path,
+            architecture_json_paths=architecture_json_paths,
+            system_name=system_name,
+        )
 
     @mcp.tool(name="archlens_schema_drift")
     def archlens_schema_drift(repo_path: str, output_path: str | None = None) -> str:

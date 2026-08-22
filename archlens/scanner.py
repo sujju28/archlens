@@ -160,6 +160,12 @@ def scan_repository(
     for rel in intent_relationships(intents, snapshot):
         snapshot.relationships.append(rel)
 
+    # Hybrid capability catalog: auto-seed + preserve curated fields
+    from archlens.analysis.capabilities import sync_capabilities
+
+    if persist:
+        sync_capabilities(snapshot, repo, persist=True)
+
     if persist:
         store = store or SQLiteStore(default_db_path(repo))
         store.save_snapshot(snapshot)

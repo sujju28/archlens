@@ -144,6 +144,15 @@ class MarkdownReportGenerator:
         lines.extend(
             [
                 "",
+                "## Capabilities",
+                "",
+            ]
+        )
+        lines.extend(self._capabilities_section(snapshot))
+
+        lines.extend(
+            [
+                "",
                 "## Coupling hotspots",
                 "",
                 "Types with the highest fan-in + fan-out — often shared kernels or "
@@ -353,6 +362,53 @@ class MarkdownReportGenerator:
                 "- **Sample repositories:** "
                 + ", ".join(f"`{n}`" for n in summary["sample_repositories"][:10])
             )
+        lines.append("")
+        return lines
+
+    def _capabilities_section(self, snapshot: ArchSnapshot) -> list[str]:
+        from archlens.analysis.capabilities import (
+            discover_capabilities,
+            load_catalog,
+            merge_catalog,
+        )
+
+        catalog = None
+        repo = snapshot.repo_path
+        if repo and Path(repo).exists():
+            catalog = load_catalog(repo)
+        if not catalog or not catalog.capabilities:
+            from archlens.analysis.capabilities import CapabilityCatalog
+
+            catalog = merge_catalog(
+                catalog or CapabilityCatalog(),
+                discover_capabilities(snapshot),
+            )
+        if not catalog.capabilities:
+            return [
+                "_No Controller/Gateway/UI/Batch entry points found to seed capabilities._",
+                "",
+            ]
+        approved = [c for c in catalog.capabilities if c.status == "approved"]
+        shown = (approved or catalog.capabilities)[:15]
+        lines = [
+            "Entry points mapped to capabilities (auto-seeded on scan; "
+            "curate titles in `.archlens/capabilities.yaml`). "
+            "Full catalog: `archlens capabilities`.",
+            "",
+            f"- **Total:** {len(catalog.capabilities)} "
+            f"({sum(1 for c in catalog.capabilities if c.status == 'approved')} approved, "
+            f"{sum(1 for c in catalog.capabilities if c.status == 'candidate')} candidates)",
+            "",
+        ]
+        for cap in shown:
+            extra = f" — {cap.description}" if cap.description else ""
+            lines.append(
+                f"- **{cap.title}** (`{cap.stereotype}`) "
+                + ", ".join(f"`{n}`" for n in cap.elements[:4])
+                + extra
+            )
+        if len(catalog.capabilities) > len(shown):
+            lines.append(f"- _…and {len(catalog.capabilities) - len(shown)} more_")
         lines.append("")
         return lines
 

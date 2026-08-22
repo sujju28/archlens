@@ -50,9 +50,11 @@ def init(repo: str | None, lang: str | None):
     cfg_path = write_default_config(root)
     from archlens.analysis.intents import write_example_intents
     from archlens.analysis.cdm_semantics import write_example_cdm_semantics
+    from archlens.analysis.capabilities import write_example_capabilities
 
     intents_path = write_example_intents(root)
     cdm_sem_path = write_example_cdm_semantics(root)
+    caps_path = write_example_capabilities(root)
     if lang:
         # Update languages in config file lightly
         text = cfg_path.read_text(encoding="utf-8")
@@ -71,6 +73,7 @@ def init(repo: str | None, lang: str | None):
     console.print(f"  Config: {cfg_path}")
     console.print(f"  Intents: {intents_path}")
     console.print(f"  CDM semantics: {cdm_sem_path}")
+    console.print(f"  Capabilities: {caps_path}")
     console.print(f"  Database: {default_db_path(root)}")
 
 
@@ -90,6 +93,13 @@ def scan(repo: str | None, commit: str | None):
     console.print(f"  Elements: {len(snapshot.elements)} | Relationships: {len(snapshot.relationships)}")
     for s, count in sorted(by_stereo.items(), key=lambda x: -x[1]):
         console.print(f"    {s}: {count}")
+    caps_meta = (snapshot.metadata or {}).get("capabilities") or {}
+    if caps_meta:
+        console.print(
+            f"  Capabilities: {caps_meta.get('count', 0)} "
+            f"(approved {caps_meta.get('approved', 0)}, "
+            f"candidates {caps_meta.get('candidates', 0)})"
+        )
 
 
 @cli.command()
@@ -592,6 +602,46 @@ def data_model_cmd(repo: str | None, inputs: tuple[str, ...], name: str, output:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(md, encoding="utf-8")
     console.print(f"[green]Basic data model written to[/green] {out}")
+
+
+@cli.command("capabilities")
+@click.option("--repo", default=None)
+@click.option("--refresh/--no-refresh", default=True, help="Re-merge from latest snapshot")
+@click.option("--output", default="docs/CAPABILITIES.md")
+def capabilities_cmd(repo: str | None, refresh: bool, output: str):
+    """Show / refresh the hybrid capability catalog (auto-seed + curated labels)."""
+    from archlens.analysis.capabilities import (
+        load_catalog,
+        save_catalog,
+        sync_capabilities,
+    )
+
+    root = _repo_path(repo)
+    snap = _store(root).get_latest_snapshot()
+    if refresh:
+        if not snap:
+            console.print("[red]No snapshot. Run archlens scan first.[/red]")
+            sys.exit(1)
+        catalog = sync_capabilities(snap, root, persist=True)
+    else:
+        catalog = load_catalog(root)
+        if not catalog.capabilities and snap:
+            catalog = sync_capabilities(snap, root, persist=True)
+    out = Path(output)
+    if not out.is_absolute():
+        out = root / out
+    out.parent.mkdir(parents=True, exist_ok=True)
+    project = (snap.metadata.get("project_name") if snap else None) or "Capabilities"
+    out.write_text(catalog.to_markdown(title=f"{project} — Capabilities"), encoding="utf-8")
+    save_catalog(root, catalog)
+    approved = sum(1 for c in catalog.capabilities if c.status == "approved")
+    console.print(f"[green]Capabilities written to[/green] {out}")
+    console.print(
+        f"  total={len(catalog.capabilities)} approved={approved} "
+        f"missing={sum(1 for c in catalog.capabilities if c.missing_in_code)}"
+    )
+    yaml_path = root / ".archlens" / "capabilities.yaml"
+    console.print(f"  catalog: {yaml_path}")
 
 
 @cli.command("schema-drift")

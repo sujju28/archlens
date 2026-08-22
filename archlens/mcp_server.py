@@ -14,6 +14,7 @@ from __future__ import annotations
 from archlens.mcp_tools import (
     tool_aggregate,
     tool_cdm,
+    tool_capabilities,
     tool_contracts,
     tool_data_model,
     tool_diagram,
@@ -152,6 +153,13 @@ def run_mcp(transport: str = "stdio", port: int = 8080) -> None:
             architecture_json_paths=architecture_json_paths,
             system_name=system_name,
         )
+
+    @mcp.tool(name="archlens_capabilities")
+    def archlens_capabilities(
+        repo_path: str, output_path: str | None = None, refresh: bool = True
+    ) -> str:
+        """List and refresh the hybrid capability catalog from entry points."""
+        return tool_capabilities(repo_path, output_path=output_path, refresh=refresh)
 
     @mcp.tool(name="archlens_schema_drift")
     def archlens_schema_drift(repo_path: str, output_path: str | None = None) -> str:

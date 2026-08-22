@@ -262,6 +262,26 @@ def tool_data_model(
     return json.dumps({"status": "success", "report_path": str(out), **summary}, indent=2)
 
 
+def tool_capabilities(repo_path: str, output_path: str | None = None, refresh: bool = True) -> str:
+    from archlens.analysis.capabilities import load_catalog, sync_capabilities
+    from archlens.storage.sqlite_store import SQLiteStore, default_db_path
+
+    snap = SQLiteStore(default_db_path(repo_path)).get_latest_snapshot()
+    if refresh:
+        if not snap:
+            return json.dumps({"error": "No snapshot. Run archlens_scan first."})
+        catalog = sync_capabilities(snap, repo_path, persist=True)
+    else:
+        catalog = load_catalog(repo_path)
+        if not catalog.capabilities and snap:
+            catalog = sync_capabilities(snap, repo_path, persist=True)
+    if output_path:
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(catalog.to_markdown(), encoding="utf-8")
+    return json.dumps(catalog.to_dict(), indent=2)
+
+
 def tool_schema_drift(repo_path: str, output_path: str | None = None) -> str:
     from archlens.analysis.schema_drift import analyze_schema_drift
     from archlens.config import load_config
@@ -363,6 +383,7 @@ TOOL_SPECS: list[dict[str, Any]] = [
     {"name": "archlens_health", "description": "Score architecture health (cycles, coupling, layer violations)."},
     {"name": "archlens_cdm", "description": "Generate a canonical data model from Entity/PO/JPA types (single or multi-repo)."},
     {"name": "archlens_data_model", "description": "Generate a standalone basic data-model inventory report."},
+    {"name": "archlens_capabilities", "description": "List/refresh the hybrid capability catalog (entry points + curated labels)."},
     {"name": "archlens_schema_drift", "description": "Compare CDM vs Flyway/Liquibase/DDL schema."},
     {"name": "archlens_intents", "description": "Load/validate human architecture intent overlays."},
     {"name": "archlens_traces", "description": "Build API→data and CICS process traces."},
